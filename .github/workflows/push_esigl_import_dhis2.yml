@@ -30,6 +30,6 @@ jobs:
           openhexa pipelines push esigl_import_dhis2 \
             --code "desigl-import-dhis2" \
             --description "${{ github.event.head_commit.message }}" \
-            --link "https://github.com/BLSQ/openhexa-templates-ds/commit/${{ github.sha }}" \
+            --link "https://github.com/aanoble/civ_pnlp/commit/${{ github.sha }}" \
             --yes
         
