@@ -63,7 +63,7 @@ GROUP BY
     District, 
     Code_produit
 order by startdate desc
-"""  # noqa: E501
+"""
 
 QUERY_DISTRICT = """
 SELECT DISTINCT
