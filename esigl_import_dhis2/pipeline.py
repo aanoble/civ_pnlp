@@ -18,6 +18,7 @@ from openhexa.toolbox.dhis2 import DHIS2
 from queries import QUERY_DISTRICT, QUERY_ETAT_STOCK
 
 
+@pipeline("esigl_import_dhis2")
 @parameter(
     "dhis2_connection",
     type=DHIS2Connection,
@@ -76,7 +77,6 @@ from queries import QUERY_DISTRICT, QUERY_ETAT_STOCK
     required=True,
 )
 @parameter("dry_run", type=bool, default=False, name="Dry run", help="Simulate DHIS2 import")
-@pipeline("esigl_import_dhis2")
 def esigl_import_dhis2(
     dhis2_connection: DHIS2Connection,
     metabase_connection: CustomConnection,
@@ -179,7 +179,7 @@ def extract_data_from_esigl(
             )
         )
     )
-    
+
     # Jointure des métadonnées
     df_etat_stock = df_etat_stock.join(
         df_products.select(["code", "id"]).rename({"id": "dataElement"}),
@@ -187,7 +187,7 @@ def extract_data_from_esigl(
         right_on="code",
         how="left",
     )
-    
+
     # Mapping des districts
     df_district_esigl = (
         pl.DataFrame(mb_client.get_data_from_sql_query(QUERY_DISTRICT))
@@ -212,12 +212,12 @@ def prepare_data_for_dhis2(
     df: pl.DataFrame, df_coc_mapping: pl.DataFrame, dhis2_aoc: str
 ) -> list[dict]:
     """Prépare le payload DHIS2 à partir des données brutes.
-    
+
     Args:
         df: DataFrame des données combinées
         df_coc_mapping: Mapping des COC
         dhis2_aoc: Attribute option combo
-        
+
     Returns:
         Liste de dictionnaires au format DHIS2
     """
@@ -244,12 +244,12 @@ def push_data_to_dhis2(
     dry_run: bool,
 ) -> dict:
     """Envoi des données à DHIS2.
-    
+
     Args:
         dhis2: Client DHIS2 configuré
         payload: Données à importer
         dry_run: Mode test
-        
+
     Returns:
         Résumé de l'import DHIS2
     """
@@ -270,7 +270,7 @@ def push_data_to_dhis2(
 @esigl_import_dhis2.task
 def write_import_report(output_dir: Path, payload: list[dict], summary: dict) -> None:
     """Génère les rapports d'import.
-    
+
     Args:
         output_dir: Répertoire de sortie
         payload: Données envoyées
