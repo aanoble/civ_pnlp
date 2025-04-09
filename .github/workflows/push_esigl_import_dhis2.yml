@@ -32,4 +32,3 @@ jobs:
             --description "${{ github.event.head_commit.message }}" \
             --link "https://github.com/aanoble/civ_pnlp/commit/${{ github.sha }}" \
             --yes
-        
