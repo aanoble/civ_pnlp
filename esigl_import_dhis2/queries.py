@@ -34,7 +34,7 @@ WITH requisition_aggregates AS (
 WHERE
     requisition_line_items.skipped = FALSE
     AND requisition_line_items.productcode in {products_code}
-    AND processing_periods.startdate >= date_trunc('month', current_date) - INTERVAL '{period} months'
+    AND processing_periods.startdate >= date_trunc('month', current_date) - INTERVAL '{lookback_months} months'
     AND programs.id = '23'
     AND requisitions.status <> 'INITIATED'
     AND requisitions.status <> 'SUBMITTED'
@@ -63,7 +63,7 @@ GROUP BY
     District, 
     Code_produit
 order by startdate desc
-"""
+"""  # noqa: E501
 
 QUERY_DISTRICT = """
 SELECT DISTINCT
