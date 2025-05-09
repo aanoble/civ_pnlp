@@ -76,7 +76,14 @@ from queries import QUERY_DISTRICT, QUERY_ETAT_STOCK
     choices=[1, 3, 6, 12],
     required=True,
 )
-@parameter("dry_run", type=bool, default=False, name="Dry run", help="Simulate DHIS2 import")
+@parameter(
+    "dry_run",
+    type=bool,
+    default=False,
+    name="Dry run",
+    help="Simulate DHIS2 import",
+    required=False,
+)
 def esigl_import_dhis2(
     dhis2_connection: DHIS2Connection,
     metabase_connection: CustomConnection,
