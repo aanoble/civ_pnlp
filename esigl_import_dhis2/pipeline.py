@@ -68,6 +68,22 @@ from queries import QUERY_DISTRICT, QUERY_ETAT_STOCK
     required=True,
 )
 @parameter(
+    code="start_date",
+    type=str,
+    name="Start date (YYYY-MM-DD)",
+    help="Start date for eSIGL data extraction",
+    required=False,
+    default=None,
+)
+@parameter(
+    code="end_date",
+    type=str,
+    name="End date (YYYY-MM-DD)",
+    help="End date for eSIGL data extraction",
+    required=False,
+    default=None,
+)
+@parameter(
     "months_back",
     type=int,
     name="Historical period in months",
@@ -91,6 +107,8 @@ def esigl_import_dhis2(
     file_path_district_mapping: str,
     output_directory: str,
     dhis2_aoc: str = "HllvX50cXC0",
+    start_date: str | None = None,
+    end_date: str | None = None,
     months_back: int = 3,
     dry_run: bool = False,
 ):
@@ -103,6 +121,8 @@ def esigl_import_dhis2(
         file_path_district_mapping: Chemin du mapping districts
         output_directory: Répertoire de sortie
         dhis2_aoc: COC attribut DHIS2
+        start_date: Date de début pour l'extraction des données
+        end_date: Date de fin pour l'extraction des données
         months_back: Nombre de mois à rafraîchir
         dry_run: Mode test sans écriture
     """
@@ -114,7 +134,7 @@ def esigl_import_dhis2(
     dhis2 = DHIS2(connection=dhis2_connection, cache_dir=Path(workspace.files_path, ".cache"))
 
     df_etat_stock = extract_data_from_esigl(
-        dhis2, metabase_connection, df_district_mapping, months_back
+        dhis2, metabase_connection, df_district_mapping, start_date, end_date, months_back
     )
 
     payload = prepare_data_for_dhis2(df_etat_stock, df_coc_mapping, dhis2_aoc)
@@ -158,6 +178,8 @@ def extract_data_from_esigl(
     dhis2: DHIS2,
     metabase: CustomConnection,
     df_district_mapping: pl.DataFrame,
+    start_date: str,
+    end_date: str,
     months: int,
 ) -> pl.DataFrame:
     """Extrait et transforme les données depuis Metabase.
@@ -166,6 +188,8 @@ def extract_data_from_esigl(
         dhis2: Client DHIS2 configuré
         metabase: Connexion Metabase
         df_district_mapping: Mapping des districts
+        start_date: Date de début pour l'extraction des données
+        end_date: Date de fin pour l'extraction des données
         months: Historique en mois à rafraîchir
 
     Returns:
@@ -179,10 +203,39 @@ def extract_data_from_esigl(
     )
 
     # Chargement des données stock
+    if start_date and end_date:
+        try:
+            start_date = datetime.strptime(start_date, "%Y-%m-%d")
+            end_date = datetime.strptime(end_date, "%Y-%m-%d")
+        except ValueError as err:
+            error_msg = "Invalid date format. Please use YYYY-MM-DD."
+            current_run.log_error(error_msg)
+            raise ValueError(error_msg) from err
+        if start_date > end_date:
+            error_msg = (
+                f"Start date `{start_date.strftime('%Y-%m-%d')}` must be before end date "
+                f"`{end_date.strftime('%Y-%m-%d')}`."
+            )
+            current_run.log_error(error_msg)
+            raise ValueError(error_msg)
+
+        start_date = start_date.strftime("%Y-%m-%d")
+        end_date = end_date.strftime("%Y-%m-%d")
+        current_run.log_info(
+            f"Extracting data from eSIGL from period: `{start_date}` to `{end_date}`"
+        )
+        processing_periods = (
+            f"""processing_periods.startdate BETWEEN '{start_date}'::date AND '{end_date}'::date"""
+        )
+    else:
+        current_run.log_info(f"Extracting data from eSIGL from last {months} months from today")
+        processing_periods = f"""processing_periods.startdate >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '{months} months'"""  # noqa: E501
+
     df_etat_stock = pl.DataFrame(
         mb_client.get_data_from_sql_query(
             QUERY_ETAT_STOCK.format(
-                products_code=tuple(df_products["code"].unique().to_list()), lookback_months=months
+                products_code=tuple(df_products["code"].unique().to_list()),
+                processing_periods=processing_periods,
             )
         )
     )

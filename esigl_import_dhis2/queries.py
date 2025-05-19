@@ -22,7 +22,7 @@ JOIN requisitions
     AND requisitions.programid = '23'
 JOIN processing_periods 
     ON requisitions.periodid = processing_periods.id
-    AND processing_periods.startdate >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '{lookback_months} months'
+    AND {processing_periods}
 JOIN programs 
     ON requisitions.programid = programs.id
 JOIN products 
@@ -56,3 +56,5 @@ FROM vw_districts
     JOIN geographic_zones ON facilities.geographiczoneid = geographic_zones.id
 ORDER BY region
 """
+
+# processing_periods.startdate >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '{lookback_months} months'
