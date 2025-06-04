@@ -294,11 +294,14 @@ def extract_data_from_esigl(
         how="left",
     )
 
+    df_ou_mapping = (
+        df_ou_mapping.filter(pl.col("ID_Dhis2").is_not_null())
+        .select(pl.col("New_Code").cast(str), pl.col("ID_Dhis2"))
+        .rename({"New_Code": "code_site", "ID_Dhis2": "orgUnit"})
+    )
     # The first join recover id district from eSIGL and the last one map this id to OrgUnit ID DHIS2
     return df_etat_stock.join(
-        df_ou_mapping.filter(pl.col("ID_Dhis2").is_not_null())
-        .select(["New_Code", "ID_Dhis2"])
-        .rename({"New_Code": "code_site", "ID_Dhis2": "orgUnit"}),
+        df_ou_mapping,
         on="code_site",
         how="left",
     ).with_columns(

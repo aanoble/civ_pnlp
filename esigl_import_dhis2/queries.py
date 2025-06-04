@@ -33,8 +33,7 @@ WHERE
     requisition_line_items.productcode IN {products_code}
     AND {processing_periods}
     AND programs.id IN (19, 23)
-    AND requisitions.status <> 'INITIATED'
-    AND requisitions.status <> 'SUBMITTED'
+    AND requisitions.status NOT IN ('INITIATED', 'SUBMITTED')
     AND requisitions.emergency = false
 """  # noqa: E501
 
