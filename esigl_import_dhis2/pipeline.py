@@ -97,10 +97,11 @@ from queries import QUERY_ETAT_STOCK
 )
 @parameter(
     "facilities_code",
-    type=list,
+    type=str,
     name="eSIGL facilities code",
     help="eSIGL facilities code to filter data",
     required=False,
+    multiple=True,
 )
 @parameter(
     "dry_run",
@@ -270,9 +271,10 @@ def extract_data_from_esigl(
                 "Please check the facilities code in eSIGL."
             )
             current_run.log_critical(error_msg)
+
         facilities_code = [code for code in facilities_code if code not in wrong_facilites_code]
 
-        query_etat_stock += f""" AND facilities.code IN {tuple(facilities_code)}"""
+        query_etat_stock += f" AND facilities.code IN {tuple(facilities_code) if len(facilities_code) > 1 else f'({facilities_code[0]!r})'}"  # noqa: E501
 
         current_run.log_info(f"Filtering data for facilities: {', '.join(facilities_code)}")
 

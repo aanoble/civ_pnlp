@@ -99,4 +99,5 @@ FROM vw_districts
 ORDER BY region
 """
 
-# processing_periods.startdate >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '{lookback_months} months'
+# processing_periods.startdate >= DATE_TRUNC('month', CURRENT_DATE)
+#  - INTERVAL '{lookback_months} months'
