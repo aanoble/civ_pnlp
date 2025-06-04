@@ -15,7 +15,7 @@ from openhexa.sdk import (
     workspace,
 )
 from openhexa.toolbox.dhis2 import DHIS2
-from queries import QUERY_DISTRICT, QUERY_ETAT_STOCK
+from queries import QUERY_ETAT_STOCK
 
 
 @pipeline("esigl_import_dhis2")
@@ -36,7 +36,7 @@ from queries import QUERY_DISTRICT, QUERY_ETAT_STOCK
     required=True,
 )
 @parameter(
-    "file_path_coc_mapping",
+    "fp_coc_mapping",
     type=str,
     name="File path for coc mapping",
     help="File path for coc mapping cols located in directory `metabase eSIGL/data/ressources`",
@@ -44,11 +44,14 @@ from queries import QUERY_DISTRICT, QUERY_ETAT_STOCK
     required=True,
 )
 @parameter(
-    "file_path_district_mapping",
+    "fp_ou_de_mapping",
     type=str,
-    name="File path district mapping",
-    help="File path for district mapping cols located in directory `metabase eSIGL/data/ressources`",  # noqa: E501
-    default="metabase eSIGL/data/ressources/mapping_district.json",
+    name="File path OrgUnit and dataElement mapping eSIGL to DHIS2",
+    help=(
+        "File path OrgUnit and dataElement mapping eSIGL to DHIS2 "
+        "located in directory `metabase eSIGL/data/ressources`"
+    ),
+    default="metabase eSIGL/data/ressources/Fichier mapping OrgUnit eSIGL DHIS2.xlsx",
     required=True,
 )
 @parameter(
@@ -93,6 +96,13 @@ from queries import QUERY_DISTRICT, QUERY_ETAT_STOCK
     required=True,
 )
 @parameter(
+    "facilities_code",
+    type=list,
+    name="eSIGL facilities code",
+    help="eSIGL facilities code to filter data",
+    required=False,
+)
+@parameter(
     "dry_run",
     type=bool,
     default=False,
@@ -103,13 +113,14 @@ from queries import QUERY_DISTRICT, QUERY_ETAT_STOCK
 def esigl_import_dhis2(
     dhis2_connection: DHIS2Connection,
     metabase_connection: CustomConnection,
-    file_path_coc_mapping: str,
-    file_path_district_mapping: str,
+    fp_coc_mapping: str,
+    fp_ou_de_mapping: str,
     output_directory: str,
     dhis2_aoc: str = "HllvX50cXC0",
     start_date: str | None = None,
     end_date: str | None = None,
     months_back: int = 3,
+    facilities_code: list[str] | None = None,
     dry_run: bool = False,
 ):
     """Orchestre le processus complet d'import des données eSIGL -> DHIS2.
@@ -117,24 +128,30 @@ def esigl_import_dhis2(
     Args:
         dhis2_connection: Connexion DHIS2 cible
         metabase_connection: Connexion Metabase source
-        file_path_coc_mapping: Chemin du mapping COC
-        file_path_district_mapping: Chemin du mapping districts
+        fp_coc_mapping: Chemin du mapping COC
+        fp_ou_de_mapping: Chemin du mapping orgUnit et dataElement
         output_directory: Répertoire de sortie
         dhis2_aoc: COC attribut DHIS2
         start_date: Date de début pour l'extraction des données
         end_date: Date de fin pour l'extraction des données
         months_back: Nombre de mois à rafraîchir
+        facilities_code: Code des établissements eSIGL pour filtrer les données
         dry_run: Mode test sans écriture
     """
-    df_district_mapping = read_ressources_files(
-        file_path_district_mapping, ["orgUnit", "id_district"]
-    )
-    df_coc_mapping = read_ressources_files(file_path_coc_mapping, ["coc", "col"])
+    df_ou_mapping = read_ressources_files(file_path=fp_ou_de_mapping, sheet_name="OrgUnit")
+    df_de_mapping = read_ressources_files(file_path=fp_ou_de_mapping, sheet_name="DataElement")
+    df_coc_mapping = read_ressources_files(fp_coc_mapping, ["coc", "col"])
 
     dhis2 = DHIS2(connection=dhis2_connection, cache_dir=Path(workspace.files_path, ".cache"))
 
     df_etat_stock = extract_data_from_esigl(
-        dhis2, metabase_connection, df_district_mapping, start_date, end_date, months_back
+        metabase_connection,
+        df_ou_mapping,
+        df_de_mapping,
+        start_date,
+        end_date,
+        months_back,
+        facilities_code,
     )
 
     payload = prepare_data_for_dhis2(df_etat_stock, df_coc_mapping, dhis2_aoc)
@@ -144,11 +161,14 @@ def esigl_import_dhis2(
 
 
 @esigl_import_dhis2.task
-def read_ressources_files(file_path: str, schema: list) -> pl.DataFrame:
+def read_ressources_files(
+    file_path: str, sheet_name: str | None = None, schema: list | None = None
+) -> pl.DataFrame:
     """Charge un fichier JSON de mapping en DataFrame.
 
     Args:
         file_path: Chemin relatif depuis le répertoire de travail
+        sheet_name: Nom de la feuille à lire (si applicable)
         schema: Liste des noms de colonnes
 
     Returns:
@@ -163,44 +183,49 @@ def read_ressources_files(file_path: str, schema: list) -> pl.DataFrame:
         current_run.log_error(error_msg)
         raise FileNotFoundError(error_msg)
 
-    with Path.open(full_path.as_posix(), encoding="utf-8") as file:
-        dico_map = json.load(file)
+    if full_path.suffix == ".json":
+        with Path.open(full_path.as_posix(), encoding="utf-8") as file:
+            dico_map = json.load(file)
 
-    return pl.DataFrame(
-        data=list(dico_map.items()),
-        schema=schema,
-        orient="row",
-    )
+        return pl.DataFrame(
+            data=list(dico_map.items()),
+            schema=schema,
+            orient="row",
+        )
+    if full_path.suffix in [".xlsx", ".xls"]:
+        if sheet_name:
+            return pl.read_excel(full_path, sheet_name=sheet_name)
+
+        return pl.read_excel(full_path)
+
+    return pl.DataFrame()
 
 
 @esigl_import_dhis2.task
 def extract_data_from_esigl(
-    dhis2: DHIS2,
     metabase: CustomConnection,
-    df_district_mapping: pl.DataFrame,
+    df_ou_mapping: pl.DataFrame,
+    df_de_mapping: pl.DataFrame,
     start_date: str,
     end_date: str,
     months: int,
+    facilities_code: list[str] | None = None,
 ) -> pl.DataFrame:
     """Extrait et transforme les données depuis Metabase.
 
     Args:
-        dhis2: Client DHIS2 configuré
         metabase: Connexion Metabase
-        df_district_mapping: Mapping des districts
+        df_ou_mapping: DataFrame mapping des unités organisationnelles
+        df_de_mapping: DataFrame mapping des dataElements
         start_date: Date de début pour l'extraction des données
         end_date: Date de fin pour l'extraction des données
         months: Historique en mois à rafraîchir
+        facilities_code: Code des établissements eSIGL pour filtrer les données
 
     Returns:
         DataFrame combinant les données métier et les métadonnées
     """
     mb_client = Metabase(metabase)
-
-    # Récupération des métadonnées produits
-    df_products = pl.DataFrame(dhis2.meta.data_elements(fields="code,id,name")).filter(
-        pl.col("name").str.contains("PNLP") & pl.col("code").is_not_null()
-    )
 
     # Chargement des données stock
     if start_date and end_date:
@@ -225,16 +250,36 @@ def extract_data_from_esigl(
             f"Extracting data from eSIGL from period: `{start_date}` to `{end_date}`"
         )
         processing_periods = (
-            f"""processing_periods.startdate BETWEEN '{start_date}'::date AND '{end_date}'::date"""
+            f"""processing_periods.enddate BETWEEN '{start_date}'::date AND '{end_date}'::date"""
         )
     else:
         current_run.log_info(f"Extracting data from eSIGL from last {months} months from today")
-        processing_periods = f"""processing_periods.startdate >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '{months} months'"""  # noqa: E501
+        processing_periods = f"""processing_periods.enddate >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '{months} months'"""  # noqa: E501
+
+    query_etat_stock = QUERY_ETAT_STOCK
+
+    if facilities_code:
+        df_site = pl.DataFrame(mb_client.get_data_from_sql_query("SELECT code FROM facilities"))
+
+        wrong_facilites_code = [
+            code for code in facilities_code if code not in df_site["code"].to_list()
+        ]
+        if wrong_facilites_code:
+            error_msg = (
+                f"Invalid facilities code: {', '.join(wrong_facilites_code)}. "
+                "Please check the facilities code in eSIGL."
+            )
+            current_run.log_critical(error_msg)
+        facilities_code = [code for code in facilities_code if code not in wrong_facilites_code]
+
+        query_etat_stock += f""" AND facilities.code IN {tuple(facilities_code)}"""
+
+        current_run.log_info(f"Filtering data for facilities: {', '.join(facilities_code)}")
 
     df_etat_stock = pl.DataFrame(
         mb_client.get_data_from_sql_query(
-            QUERY_ETAT_STOCK.format(
-                products_code=tuple(df_products["code"].unique().to_list()),
+            query_etat_stock.format(
+                products_code=tuple(df_de_mapping["code_produit"].unique().to_list()),
                 processing_periods=processing_periods,
             )
         )
@@ -242,28 +287,22 @@ def extract_data_from_esigl(
 
     # Jointure des métadonnées
     df_etat_stock = df_etat_stock.join(
-        df_products.select(["code", "id"]).rename({"id": "dataElement"}),
-        left_on="code_produit",
-        right_on="code",
+        df_de_mapping.select(["code_produit", "dataElement"]),
+        on="code_produit",
         how="left",
     )
 
-    # Mapping des districts
-    df_district_esigl = (
-        pl.DataFrame(mb_client.get_data_from_sql_query(QUERY_DISTRICT))
-        .select(["district", "id_district"])
-        .unique()
-    )
-
     # The first join recover id district from eSIGL and the last one map this id to OrgUnit ID DHIS2
-    return (
-        df_etat_stock.join(df_district_esigl, on="district", how="left")
-        .join(df_district_mapping, on="id_district", how="left")
-        .with_columns(
-            pl.col("startdate")
-            .map_elements(lambda x: x[:7].replace("-", ""), return_dtype=pl.String)
-            .alias("period")
-        )
+    return df_etat_stock.join(
+        df_ou_mapping.filter(pl.col("ID_Dhis2").is_not_null())
+        .select(["New_Code", "ID_Dhis2"])
+        .rename({"New_Code": "code_site", "ID_Dhis2": "orgUnit"}),
+        on="code_site",
+        how="left",
+    ).with_columns(
+        pl.col("enddate")
+        .map_elements(lambda x: x[:7].replace("-", ""), return_dtype=pl.String)
+        .alias("period")
     )
 
 
@@ -283,14 +322,15 @@ def prepare_data_for_dhis2(
     """
     payload = []
     for row in df_coc_mapping.iter_rows(named=True):
+        new_df = df.filter(pl.col(row["col"]).is_not_null())
         payload.extend(
-            df.select(
+            new_df.select(
                 pl.col("dataElement"),
                 pl.lit(row["coc"]).alias("categoryOptionCombo"),
                 pl.lit("HllvX50cXC0").alias("attributeOptionCombo"),
                 pl.col("orgUnit"),
                 pl.col("period"),
-                pl.col(row["col"]).fill_null(0).round(2).cast(str).alias("value"),
+                pl.col(row["col"]).cast(int).cast(str).alias("value"),
             ).to_dicts()
         )
 
