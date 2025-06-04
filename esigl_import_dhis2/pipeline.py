@@ -141,7 +141,7 @@ def esigl_import_dhis2(
     """
     df_ou_mapping = read_ressources_files(file_path=fp_ou_de_mapping, sheet_name="OrgUnit")
     df_de_mapping = read_ressources_files(file_path=fp_ou_de_mapping, sheet_name="DataElement")
-    df_coc_mapping = read_ressources_files(fp_coc_mapping, ["coc", "col"])
+    df_coc_mapping = read_ressources_files(fp_coc_mapping, schema=["coc", "col"])
 
     dhis2 = DHIS2(connection=dhis2_connection, cache_dir=Path(workspace.files_path, ".cache"))
 
