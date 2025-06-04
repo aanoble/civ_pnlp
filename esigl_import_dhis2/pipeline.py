@@ -291,7 +291,7 @@ def extract_data_from_esigl(
     df_etat_stock = df_etat_stock.join(
         df_de_mapping.select(["code_produit", "dataElement"]),
         on="code_produit",
-        how="left",
+        how="inner",
     )
 
     df_ou_mapping = (
@@ -303,7 +303,7 @@ def extract_data_from_esigl(
     return df_etat_stock.join(
         df_ou_mapping,
         on="code_site",
-        how="left",
+        how="inner",
     ).with_columns(
         pl.col("enddate")
         .map_elements(lambda x: x[:7].replace("-", ""), return_dtype=pl.String)
