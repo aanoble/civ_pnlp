@@ -155,10 +155,6 @@ def esigl_import_dhis2(
         facilities_code,
     )
 
-    if df_etat_stock.is_empty():
-        current_run.log_info("No data found in eSIGL for the specified period.")
-        return
-
     current_run.log_info(
         f"Extracted {df_etat_stock.shape[0]} records from eSIGL"
         f" for the period {start_date} to {end_date} done."
