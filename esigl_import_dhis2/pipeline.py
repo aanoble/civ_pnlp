@@ -155,14 +155,10 @@ def esigl_import_dhis2(
         facilities_code,
     )
 
-    current_run.log_info(
-        f"Extracted {df_etat_stock.shape[0]} records from eSIGL"
-        f" for the period {start_date} to {end_date} done."
-    )
-
     payload = prepare_data_for_dhis2(df_etat_stock, df_coc_mapping, dhis2_aoc)
 
     summary = push_data_to_dhis2(dhis2, payload, dry_run)
+
     write_import_report(output_directory, payload, summary)
 
 
@@ -305,7 +301,7 @@ def extract_data_from_esigl(
         .rename({"New_Code": "code_site", "ID_Dhis2": "orgUnit"})
     )
     # The first join recover id district from eSIGL and the last one map this id to OrgUnit ID DHIS2
-    return df_etat_stock.join(
+    df_etat_stock = df_etat_stock.join(
         df_ou_mapping,
         on="code_site",
         how="inner",
@@ -314,6 +310,8 @@ def extract_data_from_esigl(
         .map_elements(lambda x: x[:7].replace("-", ""), return_dtype=pl.String)
         .alias("period")
     )
+    current_run.log_info(f"Extracted {df_etat_stock.shape[0]} records from eSIGL")
+    return df_etat_stock
 
 
 @esigl_import_dhis2.task
