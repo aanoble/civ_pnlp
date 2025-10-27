@@ -30,8 +30,7 @@ JOIN geographic_zones ON facilities.geographiczoneid = geographic_zones.id
 LEFT JOIN product_forms ON products.formid = product_forms.id
 LEFT JOIN dosage_units ON products.dosageunitid = dosage_units.id
 WHERE
-    requisition_line_items.productcode IN {products_code}
-    AND {processing_periods}
+    {processing_periods}
     AND programs.id IN (19, 23)
     AND requisitions.status NOT IN ('INITIATED', 'SUBMITTED')
     AND requisitions.emergency = false

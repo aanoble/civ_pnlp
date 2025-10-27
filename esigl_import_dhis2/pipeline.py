@@ -9,6 +9,7 @@ from metabase import Metabase
 from openhexa.sdk import (
     CustomConnection,
     DHIS2Connection,
+    File,
     current_run,
     parameter,
     pipeline,
@@ -37,7 +38,7 @@ from queries import QUERY_ETAT_STOCK
 )
 @parameter(
     "fp_coc_mapping",
-    type=str,
+    type=File,
     name="File path for coc mapping",
     help="File path for coc mapping cols located in directory `metabase eSIGL/data/ressources`",
     default="metabase eSIGL/data/ressources/mapping_coc.json",
@@ -45,7 +46,7 @@ from queries import QUERY_ETAT_STOCK
 )
 @parameter(
     "fp_ou_de_mapping",
-    type=str,
+    type=File,
     name="File path OrgUnit and dataElement mapping eSIGL to DHIS2",
     help=(
         "File path OrgUnit and dataElement mapping eSIGL to DHIS2 "
@@ -104,6 +105,14 @@ from queries import QUERY_ETAT_STOCK
     multiple=True,
 )
 @parameter(
+    "product_code",
+    type=str,
+    name="eSIGL products code",
+    help="eSIGL products code to filter data",
+    required=False,
+    multiple=True,
+)
+@parameter(
     "dry_run",
     type=bool,
     default=False,
@@ -122,6 +131,7 @@ def esigl_import_dhis2(
     end_date: str | None = None,
     months_back: int = 3,
     facilities_code: list[str] | None = None,
+    product_code: list[str] | None = None,
     dry_run: bool = False,
 ):
     """Orchestre le processus complet d'import des données eSIGL -> DHIS2.
@@ -137,6 +147,7 @@ def esigl_import_dhis2(
         end_date: Date de fin pour l'extraction des données
         months_back: Nombre de mois à rafraîchir
         facilities_code: Code des établissements eSIGL pour filtrer les données
+        product_code: Code des produits eSIGL pour filtrer les données
         dry_run: Mode test sans écriture
     """
     df_ou_mapping = read_ressources_files(file_path=fp_ou_de_mapping, sheet_name="OrgUnit")
@@ -153,6 +164,7 @@ def esigl_import_dhis2(
         end_date,
         months_back,
         facilities_code,
+        product_code,
     )
 
     payload = prepare_data_for_dhis2(df_etat_stock, df_coc_mapping, dhis2_aoc)
@@ -179,7 +191,7 @@ def read_ressources_files(
     Raises:
         FileNotFoundError: Si le fichier n'existe pas
     """
-    full_path = Path(workspace.files_path) / file_path
+    full_path = Path(workspace.files_path) / Path(file_path.path)
     if not full_path.exists():
         error_msg = f"File not found : {full_path.as_posix()}"
         current_run.log_error(error_msg)
@@ -212,6 +224,7 @@ def extract_data_from_esigl(
     end_date: str,
     months: int,
     facilities_code: list[str] | None = None,
+    products_code: list[str] | None = None,
 ) -> pl.DataFrame:
     """Extrait et transforme les données depuis Metabase.
 
@@ -223,6 +236,7 @@ def extract_data_from_esigl(
         end_date: Date de fin pour l'extraction des données
         months: Historique en mois à rafraîchir
         facilities_code: Code des établissements eSIGL pour filtrer les données
+        products_code: Code des produits eSIGL pour filtrer les données
 
     Returns:
         DataFrame combinant les données métier et les métadonnées
@@ -279,10 +293,30 @@ def extract_data_from_esigl(
 
         current_run.log_info(f"Filtering data for facilities: {', '.join(facilities_code)}")
 
+    if products_code:
+        wrong_product_code = [
+            code
+            for code in products_code
+            if code not in df_de_mapping["code_produit"].unique().to_list()
+        ]
+        if wrong_product_code:
+            error_msg = (
+                f"Invalid product code: {', '.join(wrong_product_code)}. "
+                "Please check the product code in eSIGL."
+            )
+            current_run.log_critical(error_msg)
+
+        products_code = [code for code in products_code if code not in wrong_product_code]
+
+        current_run.log_info(f"Filtering data for products: {', '.join(products_code)}")
+    else:
+        products_code = df_de_mapping["code_produit"].unique().to_list()
+
+    query_etat_stock += f" AND requisition_line_items.productcode IN {tuple(products_code) if len(products_code) > 1 else f'({products_code[0]!r})'}"  # noqa: E501
+
     df_etat_stock = pl.DataFrame(
         mb_client.get_data_from_sql_query(
             query_etat_stock.format(
-                products_code=tuple(df_de_mapping["code_produit"].unique().to_list()),
                 processing_periods=processing_periods,
             )
         )
