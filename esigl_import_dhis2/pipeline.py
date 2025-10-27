@@ -173,6 +173,8 @@ def esigl_import_dhis2(
 
     write_import_report(output_directory, payload, summary)
 
+    cleanup_old_directory_files(Path(output_directory), payload, summary)
+
 
 @esigl_import_dhis2.task
 def read_ressources_files(
@@ -435,6 +437,36 @@ def write_import_report(output_dir: Path, payload: list[dict], summary: dict) ->
 
     current_run.add_file_output((output_dir / "payload.json").as_posix())
     current_run.add_file_output((output_dir / "report.json").as_posix())
+
+
+@esigl_import_dhis2.task
+def cleanup_old_directory_files(
+    output_dir: Path, payload: list[dict], summary: dict, retention_days: int = 180
+) -> None:
+    """Supprime les anciens fichiers de rapport.
+
+    Pour avoir une chronologie des exécutions des tâches les deux paramètres
+    ont été rajoutés mais ils ne sont pas utilisés dans la tâche.
+
+    Args:
+        output_dir: Répertoire de sortie
+        payload: Données envoyées
+        summary: Résumé de l'import DHIS2
+        retention_days: Nombre de jours à conserver
+    """
+    output_dir = Path(workspace.files_path, output_dir)
+    now = datetime.now()
+    for item in output_dir.iterdir():
+        if item.is_dir():
+            try:
+                folder_time = datetime.strptime(item.name, "%Y-%m-%d_%H-%M-%S")
+                if (now - folder_time).days >= retention_days:
+                    for sub_item in item.iterdir():
+                        sub_item.unlink()
+                    item.rmdir()
+                    current_run.log_info(f"Deleted old report directory: {item.as_posix()}")
+            except Exception:
+                continue
 
 
 if __name__ == "__main__":
