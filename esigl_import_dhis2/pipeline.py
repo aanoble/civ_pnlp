@@ -375,6 +375,10 @@ def prepare_data_for_dhis2(
                 pl.col(row["col"]).cast(int).cast(str).alias("value"),
             ).to_dicts()
         )
+        
+    fp = Path(workspace.files_path) / "payload.json"
+    with Path.open(fp, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
 
     return payload
 
