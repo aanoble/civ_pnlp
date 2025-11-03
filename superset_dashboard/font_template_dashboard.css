@@ -1,0 +1,207 @@
+/* Filter bar */
+.css-wlt4i6 {
+    padding: 16px 16px 108px;
+    background-color: #f3f3f3;
+}
+
+.css-1x85xji {
+    display: flex;
+    background-color: #f3f3f3;
+    padding: 20px;
+}
+
+
+/* Edit card formating */
+div[data-test-chart-name="[snis vs dedop] Taux de cohérence"]{
+  background: #2E8B57;
+  border-radius: 9px;          /* Rounded corners */
+  padding: 16px;                /* Space inside the card */
+  margin: 0px 10px;             /* External spacing */
+  box-shadow: 2px 6px 12px rgba(0, 0, 0, 0.25);
+}
+div[data-test-chart-name="[snis vs dedop] Taux de cohérence"] .header-title {
+  color: #f1dfcd!important;   /* Couleur du texte du titre */
+  font-weight: bold;
+  font-size: 16px;
+}
+div[data-test-chart-name="[snis vs dedop] Taux de cohérence"] .header-line {
+  color: #ffffff!important;   /* Couleur du texte du titre */
+  font-weight: bold;
+  font-size: 16px;         /* Align with value */
+  margin-top: 0px;
+}
+
+
+div[data-test-chart-name="[snis vs dedop] Taux d'incohérence"] {
+  background: #FF5252;          /* Background color */
+  border-radius: 9px;          /* Rounded corners */
+  padding: 16px;                /* Space inside the card */
+  margin: 0px 10px;             /* External spacing */
+  box-shadow: 2px 6px 12px rgba(0, 0, 0, 0.25);  /* Drop shadow */
+}
+div[data-test-chart-name="[snis vs dedop] Taux d'incohérence"] .header-title {
+  color: #f1dfcd !important;   /* Couleur du texte du titre */
+  font-weight: bold;
+  font-size: 16px;
+}
+div[data-test-chart-name="[snis vs dedop] Taux d'incohérence"] .header-line{
+  color: #ffffff!important;   /* Couleur du texte du titre */
+  font-weight: bold;
+  font-size: 16px;          /* Align with value */
+  margin-top: 0px;
+}
+
+
+/* Targeting the Pivot Table header */
+/* ===== STYLE GLOBAL ===== */
+.css-h8dzev table.pvtTable {
+    font-family: "Segoe UI", Roboto, Arial, sans-serif;
+    font-size: 13px;
+    color: #2b2b2b;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+/* ===== ENTÊTES DE COLONNES ===== */
+.css-h8dzev table.pvtTable thead tr th {
+    background-color: #dfe8f4; /* couleur des colonnes */
+    font-weight: 600;
+    font-size: 13px;
+    padding: 6px 10px;
+    border-bottom: 0.5px solid #cfd8e2;   /* plus fin */
+    border-right: 0.5px solid #d7dee7;  /* plus fin */
+    position: sticky;
+    top: 0;
+    text-align: center;
+    white-space: nowrap;
+    z-index: 10;
+}
+
+/* ===== ENTÊTES DE LIGNES ===== */
+.css-h8dzev table.pvtTable tbody tr th {
+    background-color: #fafafa; /* inchangé */
+    font-weight: 600;
+    padding: 6px 10px;
+    border-bottom: 0.5px solid #e6e6e6;  /* fin */
+    border-right: 0.5px solid #e6e6e6; /* fin */
+    text-align: left;
+    position: sticky;
+    left: 0;
+    white-space: nowrap;
+    z-index: 12;
+}
+
+/* ===== CELLULES ===== */
+.css-h8dzev table.pvtTable tbody td {
+    padding: 5px 8px;
+    border-bottom: 0.5px solid #e8e8e8;   /* très fin */
+    border-right: 0.5px solid #f0f0f0;    /* très fin */
+    text-align: right;
+}
+
+/* ===== ZEBRA ===== */
+.css-h8dzev table.pvtTable tbody tr:nth-child(even) td {
+    background-color: #f9fafc;
+}
+
+/* ===== SURVOL LIGNE ===== */
+.css-h8dzev table.pvtTable tbody tr:hover td,
+.css-h8dzev table.pvtTable tbody tr:hover th {
+    background-color: #eef3f8;
+}
+
+/* ===== LARGEURS ===== */
+.css-h8dzev table.pvtTable th,
+.css-h8dzev table.pvtTable td {
+    min-width: 85px;
+}
+
+
+/* Seconde tab complétude des donnnées */
+
+/* Gestion des prémières grilles de cartes */
+div[data-test-chart-name="[snis vs dedop] Taux de complétude"]{
+  background: #2E8B57;
+  border-radius: 9px;          /* Rounded corners */
+  padding: 16px;                /* Space inside the card */
+  margin: 0px 10px;             /* External spacing */
+  box-shadow: 2px 6px 12px rgba(0, 0, 0, 0.25);
+}
+div[data-test-chart-name="[snis vs dedop] Taux de complétude"] .header-title {
+  color: #f1dfcd!important;   /* Couleur du texte du titre */
+  font-weight: bold;
+  font-size: 16px;
+}
+div[data-test-chart-name="[snis vs dedop] Taux de complétude"] .header-line {
+  color: #ffffff!important;   /* Couleur du texte du titre */
+  font-weight: bold;
+  font-size: 16px;         /* Align with value */
+  margin-top: 0px;
+}
+
+/* Gestion de la grille nombre de valeurs DEDOP */
+div[data-test-chart-name="[snis vs dedop] Nombre de valeurs Importées Dedop"]{
+  background: #d4eaf7;
+  border-radius: 9px;          /* Rounded corners */
+  padding: 16px;                /* Space inside the card */
+  margin: 0px 10px;             /* External spacing */
+  box-shadow: 2px 6px 12px rgba(0, 0, 0, 0.25);
+}
+div[data-test-chart-name="[snis vs dedop] Nombre de valeurs Importées Dedop"] .header-title {
+  color: #3b3c3d!important;   /* Couleur du texte du titre */
+  font-weight: bold;
+  font-size: 14px;
+}
+div[data-test-chart-name="[snis vs dedop] Nombre de valeurs Importées Dedop"] .header-line {
+  color: #3b3c3d!important;   /* Couleur du texte du titre */
+  font-weight: bold;
+  font-size: 14px;         /* Align with value */
+  margin-top: 0px;
+}
+
+/* Gestion de la grille nombre de valeurs SNIS */
+div[data-test-chart-name="[snis vs dedop] Nombre de valeurs attendues SNIS"]{
+  background: #f9f9f9;
+  border-radius: 9px;          /* Rounded corners */
+  padding: 16px;                /* Space inside the card */
+  margin: 0px 10px;             /* External spacing */
+  box-shadow: 2px 6px 12px rgba(0, 0, 0, 0.25);
+}
+div[data-test-chart-name="[snis vs dedop] Nombre de valeurs attendues SNIS"] .header-title {
+  color: #5f5f5f!important;   /* Couleur du texte du titre */
+  font-weight: bold;
+  font-size: 14px;
+}
+div[data-test-chart-name="[snis vs dedop] Nombre de valeurs attendues SNIS"] .header-line {
+  color: #5f5f5f!important;   /* Couleur du texte du titre */
+  font-weight: bold;
+  font-size: 14px;         /* Align with value */
+  margin-top: 0px;
+}
+
+/* Gestion du tableau récapitulatif */
+div[data-test-chart-name="[snis vs dedop] Tableau récapitulatif de la complétude des données"] table thead th{
+  font-family: "Segoe UI", Roboto, Arial, sans-serif;
+  background-color: #dfe8f4;  /* Background color */
+  color: #2b2b2b;  
+  font-weight: 600; /* Text color */
+  /* font-weight: bold;          Emphasized header text */
+  font-size: 13px;            /* Font size */
+  padding: 13px;              /* Space inside each header cell */
+}
+
+div[data-test-chart-name="[snis vs dedop] Tableau récapitulatif de la complétude des données"] tbody td{
+  font-size: 13px;            /* Font size */
+  color: #000000;             /* Font color */
+}
+
+
+div[data-test-chart-name="[snis vs dedop] Tableau récapitulatif de la complétude des données"] tbody tr:nth-child(even) {
+  background-color: #f2f2f2; /* Light grey background for even rows */
+}
+
+/* ===== SURVOL LIGNE ===== */
+div[data-test-chart-name="[snis vs dedop] Tableau récapitulatif de la complétude des données"] tbody tr:hover td,
+div[data-test-chart-name="[snis vs dedop] Tableau récapitulatif de la complétude des données"] tbody tr:hover th {
+    background-color: #eef3f8;
+}

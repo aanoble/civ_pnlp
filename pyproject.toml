@@ -1,7 +1,7 @@
 [project]
-name = "openhexa-templates-ds"
+name = "openhexa-nmdr-pipelines"
 version = "0.1.0"
-description = "OpenHEXA pipeline templates library maintained by Bluesquare Data Services team"
+description = "OpenHEXA pipelines for nmdr civ"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -77,3 +77,8 @@ allow-star-arg-any = true
 mypy-init-return = true
 suppress-dummy-args = true
 suppress-none-returning = true
+
+[tool.pyright]
+pythonVersion = "3.13"
+typeCheckingMode = "strict"
+reportMissingTypeStubs = false
