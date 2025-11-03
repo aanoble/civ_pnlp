@@ -114,6 +114,12 @@ class Metabase:
 
 
 class Api:
+    """A class to handle Metabase API authentication and session management.
+
+    This class manages the connection to Metabase, validates connection parameters,
+    and maintains an authenticated session for API requests.
+    """
+
     def __init__(self, connection: CustomConnection):
         self._validate_connection(connection)
         self.url = self.parse_url(connection.url)  # type: ignore
