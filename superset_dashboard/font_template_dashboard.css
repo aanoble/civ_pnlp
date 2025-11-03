@@ -51,6 +51,12 @@ div[data-test-chart-name="[snis vs dedop] Taux d'incohérence"] .header-line{
   margin-top: 0px;
 }
 
+div[data-test-chart-name="[snis vs dedop] Évolution du taux d'incohérence"] {
+  border-radius: 9px;          /* Rounded corners */
+  padding: 16px;                /* Space inside the card */
+  margin: 0px 10px;             /* External spacing */
+  box-shadow: 2px 6px 12px rgba(0, 0, 0, 0.25);  /* Drop shadow */
+}
 
 /* Targeting the Pivot Table header */
 /* ===== STYLE GLOBAL ===== */

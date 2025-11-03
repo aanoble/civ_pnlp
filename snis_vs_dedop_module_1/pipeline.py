@@ -742,19 +742,25 @@ def export_to_database(
     manager_conn.autocommit = False
     manager_cursor = manager_conn.cursor()
 
-    if table_name != "snis_vs_dedop_data_module_1_coherence_tracabilite":
-        manager_cursor.execute(f"""
+    query = (
+        f"""
         DELETE FROM "{table_name}"
         WHERE period in {periode_range}
-        """)
-        deleted_rows = manager_cursor.rowcount
+    """
+        if table_name != "snis_vs_dedop_data_module_1_coherence_tracabilite"
+        else f"""
+        DELETE FROM "{table_name}"
+        WHERE date_controle = '{datetime.now().date().strftime("%Y-%m-%d")}'
+    """
+    )
+    manager_cursor.execute(query)
+    deleted_rows = manager_cursor.rowcount
 
-        if deleted_rows > 0:
-            current_run.log_info(
-                f"{deleted_rows} enregistrements supprimés de la table "
-                f"`{table_name}` pour mise à jour."
-            )
-            manager_conn.commit()
+    if deleted_rows > 0:
+        current_run.log_info(
+            f"{deleted_rows} enregistrements supprimés de la table `{table_name}` pour mise à jour."
+        )
+        manager_conn.commit()
 
     selected_columns = pl.read_database_uri(
         query=f"""SELECT column_name

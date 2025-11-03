@@ -88,6 +88,7 @@ venv = "../openhexa_venv"
 pythonVersion = "3.13"
 typeCheckingMode = "basic"
 reportMissingTypeStubs = false
+reportMissingImports = false
 exclude = [
     "other files/",
     "superset_dashboard/",
