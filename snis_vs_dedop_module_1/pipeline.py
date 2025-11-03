@@ -117,28 +117,30 @@ def snis_vs_dedop_module_1(
         df_data=df_compare, df_org_units=df_org_units, table_name="snis_vs_dedop_data_module_1"
     )
 
-    df_coherence = process_data_with_org_units(
-        df_data=df_coherence,
-        df_org_units=df_org_units,
-        table_name="snis_vs_dedop_data_module_1_coherence",
-    )
-
+    # Cohérence avec tracabilité
     df_coherence_tracabilite = process_data_with_org_units(
         df_data=df_coherence,
         df_org_units=df_org_units,
         table_name="snis_vs_dedop_data_module_1_coherence_tracabilite",
     )
 
-    df_completude = process_data_with_org_units(
-        df_data=df_completude,
+    df_coherence = process_data_with_org_units(
+        df_data=df_coherence,
         df_org_units=df_org_units,
-        table_name="snis_vs_dedop_data_module_1_completude",
+        table_name="snis_vs_dedop_data_module_1_coherence",
     )
 
+    # Complétude par district
     df_completude_district = process_data_with_org_units(
         df_data=df_completude,
         df_org_units=df_org_units,
         table_name="snis_vs_dedop_data_module_1_completude_district",
+    )
+
+    df_completude = process_data_with_org_units(
+        df_data=df_completude,
+        df_org_units=df_org_units,
+        table_name="snis_vs_dedop_data_module_1_completude",
     )
 
     # Exportation des données vers la BD
