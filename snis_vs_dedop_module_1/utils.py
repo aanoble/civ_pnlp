@@ -12,7 +12,8 @@ def check_server_health(dhis2: DHIS2) -> bool:
     dhis2 : DHIS2
         The DHIS2 instance to check.
 
-    Returns:
+    Returns
+    -------
         bool: True if the server is responding, raises ConnectionError otherwise.
     """
     try:
