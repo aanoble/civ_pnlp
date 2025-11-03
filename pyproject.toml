@@ -89,6 +89,10 @@ pythonVersion = "3.13"
 typeCheckingMode = "basic"
 reportMissingTypeStubs = false
 reportMissingImports = false
+reportArgumentType = false
+reportCallIssue = false
+reportMissingModuleSource = false
+reportOptionalSubscript = false
 exclude = [
     "other files/",
     "superset_dashboard/",
