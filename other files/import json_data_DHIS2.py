@@ -35,7 +35,7 @@ class ExcelToJsonConverter:  # noqa: D101
     def setup_ui(self):  # noqa: D102
         # Frame principal
         main_frame = ttk.Frame(self.root, padding="10")
-        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))  # type: ignore
 
         # Configuration du grid
         self.root.columnconfigure(0, weight=1)
@@ -184,7 +184,6 @@ sdu, cmm, nbrejrsrupture, quantite_proposee, quantite_commandee, quantite_approu
             payload = []
 
             for coc, col_name in self.mapping_coc.items():
-                
                 df_new = df_etat_stock.loc[df_etat_stock[col_name].notna()]
 
                 df_tmp = pd.DataFrame(

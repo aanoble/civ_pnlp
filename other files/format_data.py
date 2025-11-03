@@ -44,7 +44,7 @@ for coc, col_name in mapping_coc.items():
     payload.extend(df_tmp.to_dict(orient="records"))
 
 # 💾 Sauvegarde en JSON
-with open(fp_root / "payload.json", "w", encoding="utf-8") as f:
+with Path(fp_root / "payload.json").open("w", encoding="utf-8") as f:
     json.dump({"dataValues": payload}, f, indent=2, ensure_ascii=False)
 
 # print(f"✅ Payload exporté avec {len(payload)} lignes.")

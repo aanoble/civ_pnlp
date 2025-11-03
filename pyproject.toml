@@ -10,6 +10,10 @@ dependencies = [
 ]
 
 [tool.ruff]
+exclude = [
+    "other files/",
+    "superset_dashboard/",
+]
 line-length = 100
 
 [tool.ruff.format]
@@ -82,5 +86,9 @@ suppress-none-returning = true
 venvPath = "."
 venv = "../openhexa_venv"
 pythonVersion = "3.13"
-typeCheckingMode = "base"
+typeCheckingMode = "basic"
 reportMissingTypeStubs = false
+exclude = [
+    "other files/",
+    "superset_dashboard/",
+]
