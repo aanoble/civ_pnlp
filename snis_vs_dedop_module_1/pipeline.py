@@ -623,6 +623,7 @@ def process_data_with_org_units(
             .select(
                 [
                     "period",
+                    "date_report",
                     "region",
                     "district",
                     "date_controle",
@@ -636,6 +637,7 @@ def process_data_with_org_units(
             .group_by(
                 [
                     "period",
+                    "date_report",
                     "region",
                     "district",
                     "date_controle",
