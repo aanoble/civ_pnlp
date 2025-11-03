@@ -200,7 +200,7 @@ def read_ressources_files(
         raise FileNotFoundError(error_msg)
 
     if full_path.suffix == ".json":
-        with full_path.open(encoding="utf-8") as file:
+        with Path.open(full_path, "r", encoding="utf-8") as file:
             dico_map = json.load(file)
 
         return pl.DataFrame(

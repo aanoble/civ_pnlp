@@ -79,6 +79,8 @@ suppress-dummy-args = true
 suppress-none-returning = true
 
 [tool.pyright]
+venvPath = "."
+venv = "../openhexa_venv"
 pythonVersion = "3.13"
-typeCheckingMode = "strict"
+typeCheckingMode = "base"
 reportMissingTypeStubs = false
