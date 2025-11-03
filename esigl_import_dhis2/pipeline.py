@@ -9,7 +9,7 @@ from metabase import Metabase
 from openhexa.sdk import (
     CustomConnection,
     DHIS2Connection,
-    File,
+    File,  # type: ignore
     current_run,
     parameter,
     pipeline,
@@ -22,7 +22,7 @@ from queries import QUERY_ETAT_STOCK
 @pipeline("esigl_import_dhis2")
 @parameter(
     "dhis2_connection",
-    type=DHIS2Connection,
+    type=DHIS2Connection,  # type: ignore
     name="Target DHIS2 instance",
     help="Target DHIS2 instance",
     default="dhis2-nmdr",
@@ -30,7 +30,7 @@ from queries import QUERY_ETAT_STOCK
 )
 @parameter(
     "metabase_connection",
-    type=CustomConnection,
+    type=CustomConnection,  # type: ignore
     default="metabase-esigl",
     name="Metabase instance",
     help="Metabase instance",
@@ -57,7 +57,7 @@ from queries import QUERY_ETAT_STOCK
 )
 @parameter(
     "output_directory",
-    type=str,
+    type=str,  # type: ignore
     name="Output directory",
     help="Directory to save the output files",
     default="metabase eSIGL/data/output",
@@ -65,7 +65,7 @@ from queries import QUERY_ETAT_STOCK
 )
 @parameter(
     "dhis2_aoc",
-    type=str,
+    type=str,  # type: ignore
     name="DHIS2 attribute option combo",
     help="DHIS2 attribute option combo",
     default="HllvX50cXC0",
@@ -73,7 +73,7 @@ from queries import QUERY_ETAT_STOCK
 )
 @parameter(
     code="start_date",
-    type=str,
+    type=str,  # type: ignore
     name="Start date (YYYY-MM-DD)",
     help="Start date for eSIGL data extraction",
     required=False,
@@ -81,7 +81,7 @@ from queries import QUERY_ETAT_STOCK
 )
 @parameter(
     code="end_date",
-    type=str,
+    type=str,  # type: ignore
     name="End date (YYYY-MM-DD)",
     help="End date for eSIGL data extraction",
     required=False,
@@ -89,7 +89,7 @@ from queries import QUERY_ETAT_STOCK
 )
 @parameter(
     "months_back",
-    type=int,
+    type=int,  # type: ignore
     name="Historical period in months",
     help="Number of months to look back from current month",
     default=3,
@@ -98,7 +98,7 @@ from queries import QUERY_ETAT_STOCK
 )
 @parameter(
     "facilities_code",
-    type=str,
+    type=str,  # type: ignore
     name="eSIGL facilities code",
     help="eSIGL facilities code to filter data",
     required=False,
@@ -106,7 +106,7 @@ from queries import QUERY_ETAT_STOCK
 )
 @parameter(
     "product_code",
-    type=str,
+    type=str,  # type: ignore
     name="eSIGL products code",
     help="eSIGL products code to filter data",
     required=False,
@@ -114,7 +114,7 @@ from queries import QUERY_ETAT_STOCK
 )
 @parameter(
     "dry_run",
-    type=bool,
+    type=bool,  # type: ignore
     default=False,
     name="Dry run",
     help="Simulate DHIS2 import",
@@ -193,14 +193,14 @@ def read_ressources_files(
     Raises:
         FileNotFoundError: Si le fichier n'existe pas
     """
-    full_path = Path(workspace.files_path) / Path(file_path.path)
+    full_path = Path(workspace.files_path) / Path(file_path.path)  # type: ignore
     if not full_path.exists():
         error_msg = f"File not found : {full_path.as_posix()}"
         current_run.log_error(error_msg)
         raise FileNotFoundError(error_msg)
 
     if full_path.suffix == ".json":
-        with Path.open(full_path.as_posix(), encoding="utf-8") as file:
+        with full_path.open(encoding="utf-8") as file:
             dico_map = json.load(file)
 
         return pl.DataFrame(
@@ -248,22 +248,22 @@ def extract_data_from_esigl(
     # Chargement des données stock
     if start_date and end_date:
         try:
-            start_date = datetime.strptime(start_date, "%Y-%m-%d")
-            end_date = datetime.strptime(end_date, "%Y-%m-%d")
+            start_date = datetime.strptime(start_date, "%Y-%m-%d")  # type: ignore
+            end_date = datetime.strptime(end_date, "%Y-%m-%d")  # type: ignore
         except ValueError as err:
             error_msg = "Invalid date format. Please use YYYY-MM-DD."
             current_run.log_error(error_msg)
             raise ValueError(error_msg) from err
         if start_date > end_date:
             error_msg = (
-                f"Start date `{start_date.strftime('%Y-%m-%d')}` must be before end date "
-                f"`{end_date.strftime('%Y-%m-%d')}`."
+                f"Start date `{start_date.strftime('%Y-%m-%d')}` must be before end date "  # type: ignore
+                f"`{end_date.strftime('%Y-%m-%d')}`."  # type: ignore
             )
             current_run.log_error(error_msg)
             raise ValueError(error_msg)
 
-        start_date = start_date.strftime("%Y-%m-%d")
-        end_date = end_date.strftime("%Y-%m-%d")
+        start_date = start_date.strftime("%Y-%m-%d")  # type: ignore
+        end_date = end_date.strftime("%Y-%m-%d")  # type: ignore
         current_run.log_info(
             f"Extracting data from eSIGL from period: `{start_date}` to `{end_date}`"
         )
@@ -396,7 +396,7 @@ def push_data_to_dhis2(
     Returns:
         Résumé de l'import DHIS2
     """
-    dhis2.data_value_sets.MAX_POST_DATA_VALUES = 1000
+    dhis2.data_value_sets.MAX_POST_DATA_VALUES = 1000  # type: ignore
 
     summary = dhis2.data_value_sets.post(
         data_values=payload,
@@ -407,7 +407,7 @@ def push_data_to_dhis2(
     msg = f"Imported {len(payload)} data values to DHIS2"
     current_run.log_info(msg)
 
-    return summary
+    return summary  # type: ignore
 
 
 @esigl_import_dhis2.task

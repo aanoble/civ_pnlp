@@ -1,4 +1,3 @@
-from typing import Optional
 from urllib.parse import urlparse
 
 import pandas as pd
@@ -7,18 +6,25 @@ from openhexa.sdk import CustomConnection
 
 
 class MetabaseError(Exception):
+    """Custom exception class for handling Metabase-specific errors."""
+
     pass
 
 
 class Metabase:
+    """A class to interact with Metabase API and execute SQL queries.
+
+    This class provides functionality to connect to Metabase, execute SQL queries
+    with automatic pagination, and retrieve data as pandas DataFrames.
+    """
+
     def __init__(self, connection: CustomConnection):
         self.api = Api(connection)
 
     def get_data_from_sql_query(
         self, sql_query: str, database_id: int = 3, chunk_size: int = 2000
     ) -> pd.DataFrame:
-        """
-        Exécute une requête SQL sur Metabase avec pagination automatique.
+        """Exécute une requête SQL sur Metabase avec pagination automatique.
 
         Args:
             sql_query: Requête SQL avec {limit} et {offset} comme paramètres de pagination
@@ -51,7 +57,14 @@ class Metabase:
             raise ValueError(f"Erreur lors de la récupération des données: {e}") from e
 
     def _prepare_sql_query(self, sql_query: str) -> str:
-        """Valide et formate la requête SQL avec les paramètres de pagination."""
+        """Valide et formate la requête SQL avec les paramètres de pagination.
+
+        Args:
+            sql_query: La requête SQL à préparer
+
+        Returns:
+            str: La requête SQL formatée avec les paramètres de pagination
+        """
         sql_query = sql_query.rstrip(";")
         required_params = {"{limit}", "{offset}"}
 
@@ -67,9 +80,9 @@ class Metabase:
         return sql_query
 
     def _fetch_chunk(
-        self, sql_query: str, database_id: int, chunk_size: int, offset: int, names: Optional[list]
+        self, sql_query: str, database_id: int, chunk_size: int, offset: int, names: list | None
     ) -> tuple[pd.DataFrame, list]:
-        """Récupère un segment de données et gère les métadonnées."""
+        """Récupère un segment de données et gère les métadonnées."""  # noqa: DOC201
         try:
             response = self.api.session.post(
                 f"{self.api.url}/dataset",
@@ -103,28 +116,28 @@ class Metabase:
 class Api:
     def __init__(self, connection: CustomConnection):
         self._validate_connection(connection)
-        self.url = self.parse_url(connection.url)
+        self.url = self.parse_url(connection.url)  # type: ignore
         self.token = None
-        self.session = self.authenticate(connection.username, connection.password)
+        self.session = self.authenticate(connection.username, connection.password)  # type: ignore
 
     @staticmethod
     def _validate_connection(connection: CustomConnection):
         """Valide les paramètres de connexion."""
         if not connection:
             raise MetabaseError("Connexion requise")
-        if not all([connection.url, connection.username, connection.password]):
+        if not all([connection.url, connection.username, connection.password]):  # type: ignore
             raise MetabaseError("URL, utilisateur et mot de passe requis")
 
     @staticmethod
     def parse_url(url: str) -> str:
-        """Formate l'URL de l'API Metabase."""
+        """Formate l'URL de l'API Metabase."""  # noqa: DOC201
         parsed = urlparse(url)
         if not parsed.scheme or not parsed.netloc:
             raise MetabaseError(f"URL invalide: {url}")
         return f"{parsed.scheme}://{parsed.netloc}/api"
 
     def authenticate(self, username: str, password: str) -> requests.Session:
-        """Authentification avec gestion robuste des erreurs."""
+        """Authentification avec gestion robuste des erreurs."""  # noqa: DOC201
         session = requests.Session()
         try:
             response = session.post(
