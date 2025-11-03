@@ -94,14 +94,12 @@ def snis_vs_dedop_module_1(
         start_date=start_date, end_date=end_date, months_back=months_back
     )
 
-    current_run.log_info(
-        f"Extraction des données pour les périodes: `{', '.join(periods_range)}`..."  # type: ignore
-    )
+    # Extraction des données DHIS2
     data_snis = fetch_dhis2_data(
-        dhis2=snis, periods_range=periods_range, data_elements=DATA_ELEMENTS
+        dhis2=snis, periods_range=periods_range, data_elements=DATA_ELEMENTS, instance="SNIS"
     )
     data_dedop = fetch_dhis2_data(
-        dhis2=dedop, periods_range=periods_range, data_elements=DATA_ELEMENTS
+        dhis2=dedop, periods_range=periods_range, data_elements=DATA_ELEMENTS, instance="DEDOP"
     )
     current_run.log_info("✅ Extraction des données DHIS2 terminée.")
 
@@ -265,7 +263,10 @@ def process_periods(
 
 @snis_vs_dedop_module_1.task
 def fetch_dhis2_data(
-    dhis2: DHIS2, periods_range: list[str], data_elements: list[str]
+    dhis2: DHIS2,
+    periods_range: list[str],
+    data_elements: list[str],
+    instance: Literal["SNIS", "DEDOP"] = "SNIS",
 ) -> pl.DataFrame:
     """Fetch data from DHIS2 for the specified periods and data elements.
 
@@ -277,13 +278,18 @@ def fetch_dhis2_data(
         The list of periods to fetch data for (format: YYYY-MM).
     data_elements : list[str]
         The list of data element IDs to fetch.
+    instance : Literal["SNIS", "DEDOP"]
+        The DHIS2 instance type for logging purposes.
 
     Returns
     -------
     pl.DataFrame
         A DataFrame containing the fetched data.
     """
-    msg_info = f"⏳ Extraction des données DHIS2 depuis l'instance {dhis2.api.url} "
+    msg_info = (
+        f"⏳ Extraction des données DHIS2 depuis le {instance} "
+        f"aux périodes: `{', '.join(periods_range)}`..."
+    )
     current_run.log_info(msg_info)
     try:
         return extract_data_elements(

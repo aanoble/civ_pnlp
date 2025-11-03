@@ -4,12 +4,23 @@ from openhexa.sdk import current_run
 from openhexa.toolbox.dhis2 import DHIS2
 
 
-def check_server_health(dhis2: DHIS2):
-    """Check if the DHIS2 server is responding."""
+def check_server_health(dhis2: DHIS2) -> bool:
+    """Check if the DHIS2 server is responding.
+
+    Parameters
+    ----------
+    dhis2 : DHIS2
+        The DHIS2 instance to check.
+
+    Returns:
+        bool: True if the server is responding, raises ConnectionError otherwise.
+    """
     try:
         dhis2.ping()  # type: ignore
+        current_run.log_info(f"✅ Serveur DHIS2 {dhis2.api.url} accessible")
+        return True
     except ConnectionError as err:
-        current_run.log_error(f"Impossible d'atteindre l'instance DHIS2 à l'URL {dhis2.api.url}")
+        current_run.log_error(f"❌ Impossible d'atteindre l'instance DHIS2 à {dhis2.api.url}")
         raise ConnectionError(
             f"Impossible d'atteindre l'instance DHIS2 à l'URL {dhis2.api.url}"
         ) from err

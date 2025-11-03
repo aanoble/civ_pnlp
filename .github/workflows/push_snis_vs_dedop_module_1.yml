@@ -1,0 +1,34 @@
+name: Push snis_vs_dedop_module_1
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/push_snis_vs_dedop_module_1.yaml"
+      - "snis_vs_dedop_module_1/**"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - uses: actions/setup-python@v2
+        with:
+          python-version: '3.11'
+      
+      - name: Configure OpenHEXA CLI
+        uses: blsq/openhexa-cli-action@v1
+        with:
+          workspace: "nmdr-civ"
+          token: ${{ secrets.OH_TOKEN }}
+      - name: Push pipeline to OpenHEXA
+        run: |
+          openhexa pipelines push snis_vs_dedop_module_1 \
+            --code "snis-vs-dedop-module-1" \
+            --description "${{ github.event.head_commit.message }}" \
+            --link "https://github.com/aanoble/civ_pnlp/commit/${{ github.sha }}" \
+            --yes
