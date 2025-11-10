@@ -178,7 +178,7 @@ def esigl_import_dhis2(
 
 @esigl_import_dhis2.task
 def read_ressources_files(
-    file_path: str, sheet_name: str | None = None, schema: list | None = None
+    file_path: File, sheet_name: str | None = None, schema: list | None = None
 ) -> pl.DataFrame:
     """Charge un fichier JSON de mapping en DataFrame.
 
@@ -193,7 +193,7 @@ def read_ressources_files(
     Raises:
         FileNotFoundError: Si le fichier n'existe pas
     """
-    full_path = Path(workspace.files_path) / Path(file_path.path)  # type: ignore
+    full_path = Path(workspace.files_path) / Path(file_path.path)
     if not full_path.exists():
         error_msg = f"File not found : {full_path.as_posix()}"
         current_run.log_error(error_msg)
@@ -374,7 +374,7 @@ def prepare_data_for_dhis2(
                 pl.lit("HllvX50cXC0").alias("attributeOptionCombo"),
                 pl.col("orgUnit"),
                 pl.col("period"),
-                pl.col(row["col"]).cast(int).cast(str).alias("value"),
+                pl.col(row["col"]).cast(pl.Float64).cast(pl.Int64).cast(pl.String).alias("value"),
             ).to_dicts()
         )
     return payload
