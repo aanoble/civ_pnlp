@@ -442,7 +442,7 @@ def write_import_report(output_dir: Path, payload: list[dict], summary: dict) ->
 
 @esigl_import_dhis2.task
 def cleanup_old_directory_files(
-    output_dir: Path, payload: list[dict], summary: dict, retention_days: int = 180
+    output_dir: Path, payload: list[dict], summary: dict, retention_days: int = 60
 ) -> None:
     """Supprime les anciens fichiers de rapport.
 
