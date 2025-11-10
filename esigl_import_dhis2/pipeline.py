@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import polars as pl
+from dateutil.relativedelta import relativedelta
 from metabase import Metabase
 from openhexa.sdk import (
     CustomConnection,
@@ -93,7 +94,7 @@ from queries import QUERY_ETAT_STOCK
     name="Historical period in months",
     help="Number of months to look back from current month",
     default=3,
-    choices=[1, 3, 6, 12],
+    choices=[0, 1, 3, 6, 12],
     required=True,
 )
 @parameter(
@@ -224,7 +225,7 @@ def extract_data_from_esigl(
     df_de_mapping: pl.DataFrame,
     start_date: str,
     end_date: str,
-    months: int,
+    months_back: int,
     facilities_code: list[str] | None = None,
     products_code: list[str] | None = None,
 ) -> pl.DataFrame:
@@ -236,7 +237,7 @@ def extract_data_from_esigl(
         df_de_mapping: DataFrame mapping des dataElements
         start_date: Date de début pour l'extraction des données
         end_date: Date de fin pour l'extraction des données
-        months: Historique en mois à rafraîchir
+        months_back: Historique en mois à rafraîchir
         facilities_code: Code des établissements eSIGL pour filtrer les données
         products_code: Code des produits eSIGL pour filtrer les données
 
@@ -245,34 +246,34 @@ def extract_data_from_esigl(
     """
     mb_client = Metabase(metabase)
 
-    # Chargement des données stock
-    if start_date and end_date:
-        try:
-            start_date = datetime.strptime(start_date, "%Y-%m-%d")  # type: ignore
-            end_date = datetime.strptime(end_date, "%Y-%m-%d")  # type: ignore
-        except ValueError as err:
-            error_msg = "Invalid date format. Please use YYYY-MM-DD."
-            current_run.log_error(error_msg)
-            raise ValueError(error_msg) from err
-        if start_date > end_date:
-            error_msg = (
-                f"Start date `{start_date.strftime('%Y-%m-%d')}` must be before end date "  # type: ignore
-                f"`{end_date.strftime('%Y-%m-%d')}`."  # type: ignore
-            )
-            current_run.log_error(error_msg)
-            raise ValueError(error_msg)
-
-        start_date = start_date.strftime("%Y-%m-%d")  # type: ignore
-        end_date = end_date.strftime("%Y-%m-%d")  # type: ignore
+    # Conversion et gestion des dates
+    start_dt = parse_cutoff_date(start_date) if start_date else datetime.now()
+    if not start_date:
         current_run.log_info(
-            f"Extracting data from eSIGL from period: `{start_date}` to `{end_date}`"
+            f"No start date provided, defaulting to current date: {start_dt.strftime('%Y-%m-%d')}"
         )
-        processing_periods = (
-            f"""processing_periods.enddate BETWEEN '{start_date}'::date AND '{end_date}'::date"""
+
+    end_dt = parse_cutoff_date(end_date) if end_date else start_dt + relativedelta(day=31)
+    if not end_date:
+        current_run.log_info(
+            f"No end date provided, defaulting to end of month: {end_dt.strftime('%Y-%m-%d')}"
         )
-    else:
-        current_run.log_info(f"Extracting data from eSIGL from last {months} months from today")
-        processing_periods = f"""processing_periods.enddate >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '{months} months'"""  # noqa: E501
+
+    if months_back:
+        start_dt = start_dt - relativedelta(months=months_back)
+        current_run.log_info(
+            f"Adjusting start date to {start_dt.strftime('%Y-%m-%d')} "
+            f"based on months_back parameter"
+        )
+
+    current_run.log_info(
+        f"Extracting data from eSIGL from period: "
+        f"`{start_dt.strftime('%Y-%m-%d')}` to `{end_dt.strftime('%Y-%m-%d')}`"
+    )
+    processing_periods = (
+        f"""processing_periods.enddate BETWEEN '{start_dt.strftime("%Y-%m-%d")}'::date """
+        f"""AND '{end_dt.strftime("%Y-%m-%d")}'::date"""
+    )
 
     query_etat_stock = QUERY_ETAT_STOCK
 
@@ -467,6 +468,25 @@ def cleanup_old_directory_files(
                     current_run.log_info(f"Deleted old report directory: {item.as_posix()}")
             except Exception:
                 continue
+
+
+def parse_cutoff_date(date_str: str) -> datetime:
+    """Valide et convertit une date ISO en objet datetime.
+
+    Args:
+        date_str: Chaîne de date au format YYYY-MM-DD
+
+    Returns:
+        Objet datetime correspondant
+
+    Raises:
+        ValueError: Format de date invalide
+    """
+    try:
+        return datetime.strptime(date_str, "%Y-%m-%d")
+    except (ValueError, TypeError) as e:
+        current_run.log_error(f"Format de date invalide: '{date_str}' - {e!s}")
+        raise ValueError(f"Format de date invalide: '{date_str}'. Requis: YYYY-MM-DD") from e
 
 
 if __name__ == "__main__":
