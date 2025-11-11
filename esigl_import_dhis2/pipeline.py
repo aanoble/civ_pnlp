@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import polars as pl
+from dateutil import rrule
 from dateutil.relativedelta import relativedelta
 from metabase import Metabase
 from openhexa.sdk import (
@@ -18,6 +19,23 @@ from openhexa.sdk import (
 )
 from openhexa.toolbox.dhis2 import DHIS2
 from queries import QUERY_ETAT_STOCK
+
+FRENCH_MONTHS = [
+    "JANVIER",
+    "FEVRIER",
+    "MARS",
+    "AVRIL",
+    "MAI",
+    "JUIN",
+    "JUILLET",
+    "AOUT",
+    "SEPTEMBRE",
+    "OCTOBRE",
+    "NOVEMBRE",
+    "DECEMBRE",
+]
+
+QUARTER_MONTHS = {3, 6, 9, 12}
 
 
 @pipeline("esigl_import_dhis2")
@@ -270,10 +288,25 @@ def extract_data_from_esigl(
         f"Extracting data from eSIGL from period: "
         f"`{start_dt.strftime('%Y-%m-%d')}` to `{end_dt.strftime('%Y-%m-%d')}`"
     )
-    processing_periods = (
-        f"""processing_periods.enddate BETWEEN '{start_dt.strftime("%Y-%m-%d")}'::date """
-        f"""AND '{end_dt.strftime("%Y-%m-%d")}'::date"""
-    )
+
+    # Generate list of months for the reporting period
+    dates = list(rrule.rrule(freq=rrule.MONTHLY, dtstart=start_dt, until=end_dt))
+    dates = [get_date_report(dt) for dt in dates]
+    dates = set([item for sublist in dates for item in sublist])
+
+    # Normalize to a sorted list to have deterministic ordering and allow indexing
+    sorted_dates = sorted(dates)
+    if not sorted_dates:
+        error_msg = "No processing periods generated from the given date range."
+        current_run.log_error(error_msg)
+        raise ValueError(error_msg)
+
+    if len(sorted_dates) > 1:
+        periods = tuple(sorted_dates)
+    else:
+        periods = f"({sorted_dates[0]!r})"
+
+    processing_periods = "UPPER(processing_periods.name) IN " + str(periods)
 
     query_etat_stock = QUERY_ETAT_STOCK
 
@@ -489,6 +522,27 @@ def parse_cutoff_date(date_str: str) -> datetime:
     except (ValueError, TypeError) as e:
         current_run.log_error(f"Format de date invalide: '{date_str}' - {e!s}")
         raise ValueError(f"Format de date invalide: '{date_str}'. Requis: YYYY-MM-DD") from e
+
+
+def get_date_report(date_report: datetime) -> list:
+    """Transforme une date en format de rapport français avec logique trimestrielle.
+
+    Args:
+        date_report: Objet datetime représentant la date du rapport.
+
+    Returns:
+        Liste de chaînes représentant la/les périodes de rapport en français :
+        - Si la date est en fin de trimestre (mois 3, 6, 9, 12) retourne
+          [<mois précédent> <mois courant année>, <mois courant année>].
+        - Sinon retourne ["('<mois courant année')"].
+    """
+    month, year = date_report.month, date_report.year
+    current_period = f"{FRENCH_MONTHS[month - 1]} {year}"
+
+    if month in QUARTER_MONTHS:
+        prev_month = (month - 2) % 12 or 12  # Gestion du cycle annuel
+        return [f"{FRENCH_MONTHS[prev_month - 1]} {current_period}", current_period]
+    return [f"('{current_period}')"]
 
 
 if __name__ == "__main__":
