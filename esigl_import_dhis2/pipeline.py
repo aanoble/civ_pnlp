@@ -368,6 +368,8 @@ def prepare_data_for_dhis2(
     payload = []
     for row in df_coc_mapping.iter_rows(named=True):
         new_df = df.filter(pl.col(row["col"]).is_not_null())
+        if new_df.is_empty():
+            continue
         payload.extend(
             new_df.select(
                 pl.col("dataElement"),
