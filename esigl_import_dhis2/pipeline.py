@@ -21,6 +21,7 @@ from openhexa.toolbox.dhis2 import DHIS2
 from queries import QUERY_ETAT_STOCK
 
 FRENCH_MONTHS = [
+    "",
     "JANVIER",
     "FEVRIER",
     "MARS",
@@ -350,6 +351,7 @@ def extract_data_from_esigl(
 
     query_etat_stock += f" AND requisition_line_items.productcode IN {tuple(products_code) if len(products_code) > 1 else f'({products_code[0]!r})'}"  # noqa: E501
 
+    current_run.log_debug(query_etat_stock.format(processing_periods=processing_periods))
     df_etat_stock = pl.DataFrame(
         mb_client.get_data_from_sql_query(
             query_etat_stock.format(
@@ -537,12 +539,12 @@ def get_date_report(date_report: datetime) -> list:
         - Sinon retourne ["('<mois courant année')"].
     """
     month, year = date_report.month, date_report.year
-    current_period = f"{FRENCH_MONTHS[month - 1]} {year}"
+    current_period = f"{FRENCH_MONTHS[month]} {year}"
 
     if month in QUARTER_MONTHS:
         prev_month = (month - 2) % 12 or 12  # Gestion du cycle annuel
-        return [f"{FRENCH_MONTHS[prev_month - 1]} {current_period}", current_period]
-    return [f"('{current_period}')"]
+        return [f"{FRENCH_MONTHS[prev_month]} {current_period}", current_period]
+    return [f"{current_period}"]
 
 
 if __name__ == "__main__":
