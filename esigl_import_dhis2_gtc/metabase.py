@@ -2,7 +2,7 @@ from urllib.parse import urlparse
 
 import pandas as pd
 import requests
-from openhexa.sdk import CustomConnection
+from openhexa.sdk import CustomConnection, current_run
 
 
 class MetabaseError(Exception):
@@ -99,6 +99,9 @@ class Metabase:
 
             # Extraction des noms de colonnes
             if names is None:
+                current_run.log_debug(
+                    f"Fetching column names from Metabase response: {[col['display_name'] for col in data['results_metadata']['columns']]}"  # noqa: E501
+                )
                 names = [col["display_name"] for col in data["results_metadata"]["columns"]]
 
             df = pd.DataFrame(data["rows"])

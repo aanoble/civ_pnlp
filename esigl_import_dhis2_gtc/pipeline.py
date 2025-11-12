@@ -379,10 +379,7 @@ def extract_data_from_esigl(
         f"`{start_dt.strftime('%Y-%m-%d')}` to `{end_dt.strftime('%Y-%m-%d')}`"
     )
 
-    processing_periods = (
-        f"""pp.startdate BETWEEN '{start_dt.strftime("%Y-%m-%d")}'::date """
-        f"""AND '{end_dt.strftime("%Y-%m-%d")}'::date"""
-    )
+    processing_periods = f""" pp.startdate BETWEEN '{start_dt.strftime("%Y-%m-%d")}'::date AND '{end_dt.strftime("%Y-%m-%d")}'::date"""  # noqa: E501
 
     query_etat_stock = QUERY_ETAT_STOCK_GTC
 
@@ -424,16 +421,12 @@ def extract_data_from_esigl(
 
     products_code = f" rli.productcode IN {tuple(products_code) if len(products_code) > 1 else f'({products_code[0]!r})'}"  # type: ignore # noqa: E501
 
-    current_run.log_debug(
-        query_etat_stock.format(products_code=products_code, processing_periods=processing_periods)
+    query_etat_stock = query_etat_stock.format(
+        products_code=products_code, processing_periods=processing_periods
     )
-    df_etat_stock = pl.DataFrame(
-        mb_client.get_data_from_sql_query(
-            query_etat_stock.format(
-                products_code=products_code, processing_periods=processing_periods
-            )
-        )
-    )
+    current_run.log_debug(query_etat_stock)
+
+    df_etat_stock = pl.DataFrame(mb_client.get_data_from_sql_query(query_etat_stock))
 
     # Jointure des métadonnées
     df_etat_stock = df_etat_stock.with_columns(pl.col("code_produit").cast(pl.String)).join(
