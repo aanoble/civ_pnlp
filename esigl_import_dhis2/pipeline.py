@@ -140,6 +140,15 @@ QUARTER_MONTHS = {3, 6, 9, 12}
     help="Simulate DHIS2 import",
     required=False,
 )
+@parameter(
+    "import_mode",
+    type=str,  # type: ignore
+    name="Import mode",
+    help="DHIS2 import mode",
+    choices=["CREATE", "CREATE_AND_UPDATE", "UPDATE"],
+    default="CREATE_AND_UPDATE",
+    required=True,
+)
 def esigl_import_dhis2(
     dhis2_connection: DHIS2Connection,
     metabase_connection: CustomConnection,
@@ -153,6 +162,8 @@ def esigl_import_dhis2(
     facilities_code: list[str] | None = None,
     product_code: list[str] | None = None,
     dry_run: bool = False,
+    import_mode: str = "Append",
+    post_batch_size: int = 5000,
 ):
     """Orchestre le processus complet d'import des données eSIGL -> DHIS2.
 
@@ -169,6 +180,8 @@ def esigl_import_dhis2(
         facilities_code: Code des établissements eSIGL pour filtrer les données
         product_code: Code des produits eSIGL pour filtrer les données
         dry_run: Mode test sans écriture
+        import_mode: Mode d'import DHIS2
+        post_batch_size: Taille des lots pour les requêtes POST DHIS2
     """
     df_ou_mapping = read_ressources_files(file_path=fp_ou_de_mapping, sheet_name="OrgUnit")
     df_de_mapping = read_ressources_files(file_path=fp_ou_de_mapping, sheet_name="DataElement")
@@ -189,7 +202,13 @@ def esigl_import_dhis2(
 
     payload = prepare_data_for_dhis2(df_etat_stock, df_coc_mapping, dhis2_aoc)
 
-    summary = push_data_to_dhis2(dhis2, payload, dry_run)
+    summary = push_data_to_dhis2(
+        dhis2=dhis2,
+        payload=payload,
+        dry_run=dry_run,
+        import_mode=import_mode,
+        post_batch_size=post_batch_size,
+    )
 
     write_import_report(output_directory, payload, summary)
 
@@ -290,24 +309,25 @@ def extract_data_from_esigl(
         f"`{start_dt.strftime('%Y-%m-%d')}` to `{end_dt.strftime('%Y-%m-%d')}`"
     )
 
-    # Generate list of months for the reporting period
-    dates = list(rrule.rrule(freq=rrule.MONTHLY, dtstart=start_dt, until=end_dt))
-    dates = [get_date_report(dt) for dt in dates]
-    dates = set([item for sublist in dates for item in sublist])
+    # Generate list of months for the reporting period (unique, deterministic, efficient)
+    periods_set = {
+        period
+        for dt in rrule.rrule(freq=rrule.MONTHLY, dtstart=start_dt, until=end_dt)
+        for period in get_date_report(dt)
+    }
 
-    # Normalize to a sorted list to have deterministic ordering and allow indexing
-    sorted_dates = sorted(dates)
-    if not sorted_dates:
+    # Normalize to a sorted list for deterministic ordering
+    sorted_periods = sorted(periods_set)
+    if not sorted_periods:
         error_msg = "No processing periods generated from the given date range."
         current_run.log_error(error_msg)
         raise ValueError(error_msg)
 
-    if len(sorted_dates) > 1:
-        periods = tuple(sorted_dates)
-    else:
-        periods = f"({sorted_dates[0]!r})"
-
-    processing_periods = "UPPER(processing_periods.name) IN " + str(periods)
+    # Build a safe SQL IN (...) list, escaping quotes and matching UPPER(...) comparison
+    periods_sql = (
+        "(" + ", ".join("'" + p.replace("'", "''").upper() + "'" for p in sorted_periods) + ")"
+    )
+    processing_periods = f"UPPER(processing_periods.name) IN {periods_sql}"
 
     query_etat_stock = QUERY_ETAT_STOCK
 
@@ -382,6 +402,21 @@ def extract_data_from_esigl(
         .map_elements(lambda x: x[:7].replace("-", ""), return_dtype=pl.String)
         .alias("period")
     )
+    # En raison du fait qu'il peut y avoir des unités d'organisation DEDOP mappé à un
+    # ou plusieurs site eSIGL, on doit sommer les valeurs par
+    # dataElement, attributeOptionCombo, orgUnit et period
+    df_etat_stock = (
+        df_etat_stock.select(
+            pl.col("period"),
+            pl.col("orgUnit"),
+            pl.col("dataElement"),
+            pl.col(pl.NUMERIC_DTYPES),
+        )
+        .group_by(["period", "orgUnit", "dataElement"])
+        .agg(pl.col(pl.NUMERIC_DTYPES).sum())
+    )
+    df_etat_stock = df_etat_stock.with_columns(pl.col(pl.NUMERIC_DTYPES).round(0).cast(pl.Int64))
+
     current_run.log_info(f"Extracted {df_etat_stock.shape[0]} records from eSIGL")
     return df_etat_stock
 
@@ -400,22 +435,26 @@ def prepare_data_for_dhis2(
     Returns:
         Liste de dictionnaires au format DHIS2
     """
-    payload = []
+    dfs: list[pl.DataFrame] = []
     for row in df_coc_mapping.iter_rows(named=True):
-        new_df = df.filter(pl.col(row["col"]).is_not_null())
-        if new_df.is_empty():
+        col_name = row["col"]
+        subset = df.filter(pl.col(col_name).is_not_null())
+        if subset.is_empty():
             continue
-        payload.extend(
-            new_df.select(
+        dfs.append(
+            subset.select(
                 pl.col("dataElement"),
                 pl.lit(row["coc"]).alias("categoryOptionCombo"),
-                pl.lit("HllvX50cXC0").alias("attributeOptionCombo"),
+                pl.lit(dhis2_aoc).alias("attributeOptionCombo"),
                 pl.col("orgUnit"),
                 pl.col("period"),
-                pl.col(row["col"]).cast(pl.Float64).cast(pl.Int64).cast(pl.String).alias("value"),
-            ).to_dicts()
+                pl.col(col_name).cast(pl.String).alias("value"),
+            )
         )
-    return payload
+    if not dfs:
+        return []
+
+    return pl.concat(dfs).to_dicts()
 
 
 @esigl_import_dhis2.task
@@ -423,29 +462,65 @@ def push_data_to_dhis2(
     dhis2: DHIS2,
     payload: list[dict],
     dry_run: bool,
+    import_mode: str = "CREATE_AND_UPDATE",
+    post_batch_size: int = 5000,
 ) -> dict:
     """Envoi des données à DHIS2.
 
     Args:
         dhis2: Client DHIS2 configuré
         payload: Données à importer
-        dry_run: Mode test
+        dry_run: Mode test sans écriture
+        import_mode: Mode d'import DHIS2
+        post_batch_size: Taille des lots pour les requêtes POST DHIS2
 
     Returns:
         Résumé de l'import DHIS2
     """
     dhis2.data_value_sets.MAX_POST_DATA_VALUES = 1000  # type: ignore
 
-    summary = dhis2.data_value_sets.post(
-        data_values=payload,
-        import_strategy="CREATE_AND_UPDATE",
-        dry_run=dry_run,
-        skip_validation=True,
-    )
-    msg = f"Imported {len(payload)} data values to DHIS2"
-    current_run.log_info(msg)
+    total = len(payload)
+    if total == 0:
+        return {"status": "skipped", "imported": 0}
 
-    return summary  # type: ignore
+    def _chunks(seq: list[dict], size: int):
+        for i in range(0, len(seq), size):
+            yield seq[i : i + size]
+
+    aggregated = {
+        "status": "completed",
+        "import_strategy": import_mode,
+        "dry_run": dry_run,
+        "total": total,
+        "chunks": [],
+    }
+
+    imported_total = 0
+    for idx, chunk in enumerate(_chunks(payload, post_batch_size), start=1):
+        chunk_summary = dhis2.data_value_sets.post(
+            data_values=chunk,
+            import_strategy=import_mode,
+            dry_run=dry_run,
+            skip_validation=True,
+        )
+        aggregated["chunks"].append(
+            {
+                "index": idx,
+                "size": len(chunk),
+                "summary": chunk_summary,
+            }
+        )
+        imported_total += len(chunk)
+        current_run.log_info(
+            f"Posted chunk {idx} with {len(chunk)} values (strategy={import_mode})"
+        )
+
+    current_run.log_info(
+        f"Imported {imported_total}/{total} data values to DHIS2 (strategy={import_mode})"
+    )
+
+    aggregated["imported"] = imported_total
+    return aggregated  # type: ignore
 
 
 @esigl_import_dhis2.task
