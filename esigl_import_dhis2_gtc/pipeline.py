@@ -20,6 +20,14 @@ from openhexa.sdk import (
 from openhexa.toolbox.dhis2 import DHIS2
 from queries import QUERY_ETAT_STOCK_GTC
 
+EXTENDED_PRODUCT_CODE = {
+    "3050345": "AM02170",
+    "3050058": "AM02185",
+    "3050346": "AM02180",
+    "3050055": "AM02145",
+    "3050349": "AM02068",
+}
+
 
 @pipeline("esigl_import_dhis2")
 @parameter(
@@ -409,7 +417,7 @@ def extract_data_from_esigl(
         if wrong_product_code:
             error_msg = (
                 f"Invalid product code: {', '.join(wrong_product_code)}. "
-                "Please check the product code in eSIGL."
+                "Please check the product code in eSIGL or DEDOP."
             )
             current_run.log_critical(error_msg)
 
@@ -418,6 +426,14 @@ def extract_data_from_esigl(
         current_run.log_info(f"Filtering data for products: {', '.join(products_code)}")
     else:
         products_code = df_de["code"].unique().to_list()
+
+    extended_product_code = [
+        EXTENDED_PRODUCT_CODE[code_produit]
+        for code_produit in products_code
+        if code_produit in EXTENDED_PRODUCT_CODE
+    ]
+
+    products_code.extend(extended_product_code)
 
     products_code = f" rli.productcode IN {tuple(products_code) if len(products_code) > 1 else f'({products_code[0]!r})'}"  # type: ignore # noqa: E501
 
@@ -429,7 +445,12 @@ def extract_data_from_esigl(
     df_etat_stock = pl.DataFrame(mb_client.get_data_from_sql_query(query_etat_stock))
 
     # Jointure des métadonnées
-    df_etat_stock = df_etat_stock.with_columns(pl.col("code_produit").cast(pl.String)).join(
+    mapping = {v: k for k, v in EXTENDED_PRODUCT_CODE.items()}
+    df_etat_stock = df_etat_stock.with_columns(pl.col("code_produit").cast(pl.String)).with_columns(
+        pl.col("code_produit").replace(mapping).alias("code_produit")
+    )
+
+    df_etat_stock = df_etat_stock.join(
         df_de.select(["code", "id"]).rename({"code": "code_produit", "id": "dataElement"}),
         on="code_produit",
         how="inner",

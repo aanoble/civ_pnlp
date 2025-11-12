@@ -672,6 +672,7 @@ def write_import_report(output_dir: Path, payload: list[dict], summary: dict) ->
     output_dir = Path(
         workspace.files_path, output_dir, datetime.now(tz=UTC).strftime("%Y-%m-%d_%H-%M-%S")
     )
+    output_dir.parent.mkdir(parents=True, exist_ok=True)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     payload_fp = output_dir / "payload.json"
