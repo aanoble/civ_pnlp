@@ -280,7 +280,7 @@ def add_missing_orgunits(
     """
     # Collect existing members of the org unit group
     group_resp = dhis2.api.get(
-        endpoint=f"organisationUnitGroups/{group_uid}?fields=organisationUnits[id]"
+        endpoint=f"organisationUnitGroups/{group_uid}?fields=organisationUnits[id]", use_cache=False
     )
     existing_ids = {ou["id"] for ou in group_resp.get("organisationUnits", [])}
 
