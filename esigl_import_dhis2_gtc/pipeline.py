@@ -422,7 +422,7 @@ def extract_data_from_esigl(
     else:
         products_code = df_de["code"].unique().to_list()
 
-    products_code = f" AND rli.productcode IN {tuple(products_code) if len(products_code) > 1 else f'({products_code[0]!r})'}"  # type: ignore # noqa: E501
+    products_code = f" rli.productcode IN {tuple(products_code) if len(products_code) > 1 else f'({products_code[0]!r})'}"  # type: ignore # noqa: E501
 
     current_run.log_debug(
         query_etat_stock.format(products_code=products_code, processing_periods=processing_periods)
