@@ -432,8 +432,8 @@ def extract_data_from_esigl(
         for code_produit in products_code
         if code_produit in EXTENDED_PRODUCT_CODE
     ]
-
-    products_code.extend(extended_product_code)
+    if extended_product_code:
+        products_code.extend(extended_product_code)
 
     products_code = f" rli.productcode IN {tuple(products_code) if len(products_code) > 1 else f'({products_code[0]!r})'}"  # type: ignore # noqa: E501
 
