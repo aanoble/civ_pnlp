@@ -55,7 +55,7 @@ INNER JOIN latest_records lr
     ON tgtc.code_site = lr.code_site 
     AND tgtc.code_produit = lr.code_produit 
     AND tgtc.startdate = lr.max_date
-ORDER BY tgtc.code_site, tgtc.code_produit;
+ORDER BY tgtc.code_site, tgtc.code_produit
 """
 
 # processing_periods.startdate >= DATE_TRUNC('month', CURRENT_DATE)
