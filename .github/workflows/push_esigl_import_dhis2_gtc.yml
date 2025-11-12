@@ -1,0 +1,34 @@
+name: Push esigl_import_dhis2_gtc
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/push_esigl_import_dhis2_gtc.yaml"
+      - "esigl_import_dhis2_gtc/**"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - uses: actions/setup-python@v2
+        with:
+          python-version: '3.11'
+      
+      - name: Configure OpenHEXA CLI
+        uses: blsq/openhexa-cli-action@v1
+        with:
+          workspace: "nmdr-civ"
+          token: ${{ secrets.OH_TOKEN }}
+      - name: Push pipeline to OpenHEXA
+        run: |
+          openhexa pipelines push esigl_import_dhis2_gtc \
+            --code "esigl-import-dhis2-gtc" \
+            --description "${{ github.event.head_commit.message }}" \
+            --link "https://github.com/aanoble/civ_pnlp/commit/${{ github.sha }}" \
+            --yes
