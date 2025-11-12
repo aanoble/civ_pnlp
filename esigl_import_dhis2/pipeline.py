@@ -1,6 +1,7 @@
 """Template for newly generated pipelines."""
 
 import json
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -162,7 +163,7 @@ def esigl_import_dhis2(
     facilities_code: list[str] | None = None,
     product_code: list[str] | None = None,
     dry_run: bool = False,
-    import_mode: str = "Append",
+    import_mode: str = "CREATE_AND_UPDATE",
     post_batch_size: int = 5000,
 ):
     """Orchestre le processus complet d'import des données eSIGL -> DHIS2.
@@ -465,20 +466,18 @@ def push_data_to_dhis2(
     import_mode: str = "CREATE_AND_UPDATE",
     post_batch_size: int = 5000,
 ) -> dict:
-    """Envoi des données à DHIS2.
+    """Envoi des données à DHIS2 avec découpage en chunks et retry.
 
     Args:
         dhis2: Client DHIS2 configuré
         payload: Données à importer
         dry_run: Mode test sans écriture
-        import_mode: Mode d'import DHIS2
+        import_mode: Stratégie d'import DHIS2 (CREATE, UPDATE, CREATE_AND_UPDATE)
         post_batch_size: Taille des lots pour les requêtes POST DHIS2
 
     Returns:
-        Résumé de l'import DHIS2
+        Dict de résumé d'import agrégé.
     """
-    dhis2.data_value_sets.MAX_POST_DATA_VALUES = 1000  # type: ignore
-
     total = len(payload)
     if total == 0:
         return {"status": "skipped", "imported": 0}
@@ -487,39 +486,101 @@ def push_data_to_dhis2(
         for i in range(0, len(seq), size):
             yield seq[i : i + size]
 
-    aggregated = {
+    aggregated: dict = {
         "status": "completed",
         "import_strategy": import_mode,
         "dry_run": dry_run,
         "total": total,
         "chunks": [],
+        "totals": {"imported": 0, "updated": 0, "ignored": 0, "deleted": 0},
     }
 
-    imported_total = 0
+    request_params = {"dryRun": dry_run, "importStrategy": import_mode}
+    max_retries = 3
+    backoff_base = 1.0
+
     for idx, chunk in enumerate(_chunks(payload, post_batch_size), start=1):
-        chunk_summary = dhis2.data_value_sets.post(
-            data_values=chunk,
-            import_strategy=import_mode,
-            dry_run=dry_run,
-            skip_validation=True,
-        )
+        import_counts = {"imported": 0, "updated": 0, "ignored": 0, "deleted": 0}
+        issues: list = []
+
+        response = None
+        for attempt in range(1, max_retries + 1):
+            response = dhis2.api.post(
+                endpoint="dataValueSets", json={"dataValues": chunk}, params=request_params
+            )
+            status = response.status_code
+            if status == 200:
+                break
+            if status == 429 or 500 <= status < 600:
+                sleep_s = backoff_base * (2 ** (attempt - 1))
+                current_run.log_warning(
+                    f"Chunk {idx} attempt {attempt}/{max_retries} failed (status={status}). "
+                    f"Retrying in {sleep_s:.1f}s..."
+                )
+                time.sleep(sleep_s)
+                continue
+            # Non-retryable error
+            break
+
+        if response is None:
+            aggregated["chunks"].append(
+                {"index": idx, "size": len(chunk), "summary": {}, "status": "failed"}
+            )
+            current_run.log_error(
+                f"Error importing chunk {idx}: no response from DHIS2 (strategy={import_mode})"
+            )
+            continue
+
+        try:
+            resp_data = response.json()
+        except Exception:
+            resp_data = {}
+
+        if response.status_code != 200:
+            aggregated["chunks"].append(
+                {"index": idx, "size": len(chunk), "summary": resp_data, "status": "failed"}
+            )
+            current_run.log_error(
+                f"Error importing chunk {idx}: {response.text} (strategy={import_mode})"
+            )
+            continue
+
+        chunk_summary = resp_data.get("response", resp_data)
+        if "importCount" in chunk_summary:
+            ic = chunk_summary.get("importCount", {})
+            import_counts["ignored"] = ic.get("ignored", 0)
+            import_counts["imported"] = ic.get("imported", 0)
+            import_counts["updated"] = ic.get("updated", 0)
+            import_counts["deleted"] = ic.get("deleted", 0)
+
+        for conflict in chunk_summary.get("conflicts", []) or []:
+            current_run.log_warning(
+                "Conflict in chunk {i}: {obj} - {val}".format(
+                    i=idx, obj=conflict.get("object", ""), val=conflict.get("value", "")
+                )
+            )
+            issues.append(conflict)
+
         aggregated["chunks"].append(
             {
                 "index": idx,
                 "size": len(chunk),
-                "summary": chunk_summary,
+                "importCount": import_counts,
+                "issues": issues,
+                "status": "success",
             }
         )
-        imported_total += len(chunk)
-        current_run.log_info(
-            f"Posted chunk {idx} with {len(chunk)} values (strategy={import_mode})"
-        )
 
+        aggregated["totals"]["imported"] += import_counts["imported"]
+        aggregated["totals"]["updated"] += import_counts["updated"]
+        aggregated["totals"]["ignored"] += import_counts["ignored"]
+        aggregated["totals"]["deleted"] += import_counts["deleted"]
+
+    total_success = aggregated["totals"]["imported"] + aggregated["totals"]["updated"]
+    aggregated["imported"] = total_success
     current_run.log_info(
-        f"Imported {imported_total}/{total} data values to DHIS2 (strategy={import_mode})"
+        f"Imported {total_success}/{total} data values to DHIS2 (strategy={import_mode})"
     )
-
-    aggregated["imported"] = imported_total
     return aggregated  # type: ignore
 
 
@@ -537,19 +598,17 @@ def write_import_report(output_dir: Path, payload: list[dict], summary: dict) ->
     )
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    fp = output_dir / "payload.json"
-    with Path.open(fp, "w", encoding="utf-8") as f:
+    payload_fp = output_dir / "payload.json"
+    with payload_fp.open("w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
 
-    fp = output_dir / "report.json"
-    with Path.open(fp, "w", encoding="utf-8") as f:
+    report_fp = output_dir / "report.json"
+    with report_fp.open("w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
 
-    msg = f"Import report written to {output_dir.as_posix()}"
-    current_run.log_info(msg)
-
-    current_run.add_file_output((output_dir / "payload.json").as_posix())
-    current_run.add_file_output((output_dir / "report.json").as_posix())
+    current_run.log_info(f"Import report written to {output_dir.as_posix()}")
+    current_run.add_file_output(payload_fp.as_posix())
+    current_run.add_file_output(report_fp.as_posix())
 
 
 @esigl_import_dhis2.task
