@@ -190,6 +190,8 @@ def esigl_import_dhis2(
 
     dhis2 = DHIS2(connection=dhis2_connection, cache_dir=Path(workspace.files_path, ".cache"))
 
+    add_missing_orgunits(dhis2, df_ou_mapping)
+
     df_etat_stock = extract_data_from_esigl(
         metabase_connection,
         df_ou_mapping,
@@ -255,6 +257,80 @@ def read_ressources_files(
         return pl.read_excel(full_path)
 
     return pl.DataFrame()
+
+
+@esigl_import_dhis2.task
+def add_missing_orgunits(
+    dhis2: DHIS2,
+    df_ou_mapping: pl.DataFrame,
+    group_uid: str = "nJ1jXZxufek",
+    dataset_uid: str = "RGDJeX2D1bJ",
+) -> None:
+    """Ensure all mapped org units are members of the target group and dataset.
+
+    This reads the org unit IDs from the provided mapping file and compares them
+    to the current members of the organisation unit group. Any missing org units
+    are added to both the dataset and the org unit group.
+
+    Args:
+        dhis2: Client DHIS2 configuré
+        df_ou_mapping: DataFrame du mapping des unités organisationnelles
+        group_uid: UID du groupe d'unités organisationnelles
+        dataset_uid: UID de l'ensemble de données
+    """
+    # Collect existing members of the org unit group
+    group_resp = dhis2.api.get(
+        endpoint=f"organisationUnitGroups/{group_uid}?fields=organisationUnits[id]"
+    )
+    existing_ids = {ou["id"] for ou in group_resp.get("organisationUnits", [])}
+
+    # Collect target org units from mapping (non-null, unique)
+    mapping_ids = set(
+        df_ou_mapping.filter(pl.col("ID_Dhis2").is_not_null())
+        .select("ID_Dhis2")
+        .unique()
+        .to_series()
+        .to_list()
+    )
+
+    to_add = mapping_ids - existing_ids
+
+    current_run.log_info(
+        f"OrgUnit membership sync: {len(existing_ids)} existing in group, "
+        f"{len(mapping_ids)} in mapping, {len(to_add)} to add."
+    )
+
+    if not to_add:
+        current_run.log_info("No new org units to add to group/dataset.")
+        return
+
+    # Add each missing org unit to Dataset and OrgUnitGroup
+    for ou in sorted(to_add):
+        current_run.log_info(f"Adding orgUnit {ou} to OrgUnitGroup and DataSet per mapping.")
+
+        for endpoint in (
+            f"dataSets/{dataset_uid}/organisationUnits/{ou}",
+            f"organisationUnitGroups/{group_uid}/organisationUnits/{ou}",
+        ):
+            try:
+                res = dhis2.api.post(endpoint=endpoint)
+                status = getattr(res, "status_code", None)
+                if status in (200, 201):
+                    current_run.log_info(f"Added orgUnit {ou} to '{endpoint}' (status={status}).")
+                else:
+                    # Some DHIS2 instances return 409 if already present (idempotency)
+                    body = getattr(res, "text", "")
+                    if status == 409:
+                        current_run.log_info(
+                            f"OrgUnit {ou} already present for '{endpoint}' (409)."
+                        )
+                    else:
+                        current_run.log_error(
+                            f"Failed to add orgUnit {ou} to '{endpoint}': "
+                            f"status={status}, body={body}"
+                        )
+            except Exception as e:
+                current_run.log_error(f"Exception while adding orgUnit {ou} to '{endpoint}': {e!s}")
 
 
 @esigl_import_dhis2.task
