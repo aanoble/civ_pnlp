@@ -109,15 +109,6 @@ QUARTER_MONTHS = {3, 6, 9, 12}
     default=None,
 )
 @parameter(
-    "months_back",
-    type=int,  # type: ignore
-    name="Historical period in months",
-    help="Number of months to look back from current month",
-    default=3,
-    choices=[0, 1, 3, 6, 12],
-    required=True,
-)
-@parameter(
     "facilities_code",
     type=str,  # type: ignore
     name="eSIGL facilities code",
@@ -134,12 +125,13 @@ QUARTER_MONTHS = {3, 6, 9, 12}
     multiple=True,
 )
 @parameter(
-    "dry_run",
-    type=bool,  # type: ignore
-    default=False,
-    name="Dry run",
-    help="Simulate DHIS2 import",
-    required=False,
+    "months_back",
+    type=int,  # type: ignore
+    name="Historical period in months",
+    help="Number of months to look back from current month",
+    default=3,
+    choices=[0, 1, 3, 6, 12],
+    required=True,
 )
 @parameter(
     "import_mode",
@@ -149,6 +141,14 @@ QUARTER_MONTHS = {3, 6, 9, 12}
     choices=["CREATE", "CREATE_AND_UPDATE", "UPDATE"],
     default="CREATE_AND_UPDATE",
     required=True,
+)
+@parameter(
+    "dry_run",
+    type=bool,  # type: ignore
+    default=False,
+    name="Dry run",
+    help="Simulate DHIS2 import",
+    required=False,
 )
 def esigl_import_dhis2(
     dhis2_connection: DHIS2Connection,
