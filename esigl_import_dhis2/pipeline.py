@@ -185,17 +185,21 @@ def esigl_import_dhis2(
         post_batch_size: Taille des lots pour les requêtes POST DHIS2
     """
     df_ou_mapping = read_ressources_files(file_path=fp_ou_de_mapping, sheet_name="OrgUnit")
-    df_de_mapping = read_ressources_files(file_path=fp_ou_de_mapping, sheet_name="DataElement")
+    df_de_mapping = read_ressources_files(
+        file_path=fp_ou_de_mapping, sheet_name="DataElementOldCode"
+    )
     df_coc_mapping = read_ressources_files(fp_coc_mapping, schema=["coc", "col"])
 
     dhis2 = DHIS2(connection=dhis2_connection, cache_dir=Path(workspace.files_path, ".cache"))
 
     add_missing_orgunits(dhis2, df_ou_mapping)
+    data_elements_routine = fetch_routine_data_elements(dhis2=dhis2)
 
     df_etat_stock = extract_data_from_esigl(
         metabase_connection,
         df_ou_mapping,
         df_de_mapping,
+        data_elements_routine,
         start_date,
         end_date,
         months_back,
@@ -334,10 +338,31 @@ def add_missing_orgunits(
 
 
 @esigl_import_dhis2.task
+def fetch_routine_data_elements(dhis2: DHIS2) -> pl.DataFrame:
+    """Récupère les dataElements de routine depuis DHIS2.
+
+    Args:
+        dhis2: Client DHIS2 configuré
+
+    Returns:
+        DataFrame des dataElements de routine
+    """
+    df_de = pl.DataFrame(dhis2.meta.data_elements(fields="id,name,code,categoryCombo"))
+    df_de = df_de.filter(
+        pl.col("code").is_not_null()
+        & pl.col("categoryCombo").struct.field("id").str.contains("El9O9wWhg8F")
+    )
+
+    current_run.log_info(f"Retrieved {df_de.shape[0]} routine dataElements from DHIS2")
+    return df_de
+
+
+@esigl_import_dhis2.task
 def extract_data_from_esigl(
     metabase: CustomConnection,
     df_ou_mapping: pl.DataFrame,
     df_de_mapping: pl.DataFrame,
+    data_elements_routine: pl.DataFrame,
     start_date: str,
     end_date: str,
     months_back: int,
@@ -350,6 +375,7 @@ def extract_data_from_esigl(
         metabase: Connexion Metabase
         df_ou_mapping: DataFrame mapping des unités organisationnelles
         df_de_mapping: DataFrame mapping des dataElements
+        data_elements_routine: DataFrame des dataElements de routine
         start_date: Date de début pour l'extraction des données
         end_date: Date de fin pour l'extraction des données
         months_back: Historique en mois à rafraîchir
@@ -431,20 +457,40 @@ def extract_data_from_esigl(
         wrong_product_code = [
             code
             for code in products_code
-            if code not in df_de_mapping["code_produit"].unique().to_list()
+            if code not in data_elements_routine["code"].unique().to_list()
         ]
         if wrong_product_code:
             error_msg = (
                 f"Invalid product code: {', '.join(wrong_product_code)}. "
-                "Please check the product code in eSIGL."
+                "Please check the product code exists in DEDOP."
             )
             current_run.log_critical(error_msg)
 
         products_code = [code for code in products_code if code not in wrong_product_code]
+        if not products_code:
+            error_msg = "No valid product codes provided after validation."
+            current_run.log_critical(error_msg)
+            raise ValueError(error_msg)
 
         current_run.log_info(f"Filtering data for products: {', '.join(products_code)}")
     else:
-        products_code = df_de_mapping["code_produit"].unique().to_list()
+        products_code = data_elements_routine["code"].unique().to_list()
+
+    dico_products = {
+        row["code_produit"]: row["ancien_code"]
+        for row in df_de_mapping.filter(pl.col("code_produit").is_not_null())
+        .select(["ancien_code", "code_produit"])
+        .iter_rows(named=True)
+    }
+
+    extended_product_code = [
+        dico_products[code_produit]
+        for code_produit in products_code
+        if code_produit in dico_products
+    ]
+
+    if extended_product_code:
+        products_code.extend(extended_product_code)
 
     query_etat_stock += f" AND requisition_line_items.productcode IN {tuple(products_code) if len(products_code) > 1 else f'({products_code[0]!r})'}"  # noqa: E501
 
@@ -458,8 +504,14 @@ def extract_data_from_esigl(
     )
 
     # Jointure des métadonnées
+    mapping = {v: k for k, v in dico_products.items()}
+    df_etat_stock = df_etat_stock.with_columns(pl.col("code_produit").cast(pl.String)).with_columns(
+        pl.col("code_produit").replace(mapping).alias("code_produit")
+    )
     df_etat_stock = df_etat_stock.join(
-        df_de_mapping.select(["code_produit", "dataElement"]),
+        data_elements_routine.select(
+            pl.col("id").alias("dataElement"), pl.col("code").alias("code_produit")
+        ),
         on="code_produit",
         how="inner",
     )
@@ -474,11 +526,8 @@ def extract_data_from_esigl(
         df_ou_mapping,
         on="code_site",
         how="inner",
-    ).with_columns(
-        pl.col("enddate")
-        .map_elements(lambda x: x[:7].replace("-", ""), return_dtype=pl.String)
-        .alias("period")
     )
+
     # En raison du fait qu'il peut y avoir des unités d'organisation DEDOP mappé à un
     # ou plusieurs site eSIGL, on doit sommer les valeurs par
     # dataElement, attributeOptionCombo, orgUnit et period

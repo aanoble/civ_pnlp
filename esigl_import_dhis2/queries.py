@@ -1,5 +1,6 @@
 QUERY_ETAT_STOCK = """
-SELECT DISTINCT 
+SELECT DISTINCT
+    TO_CHAR(processing_periods.enddate, 'YYYYMM') AS period,
     processing_periods.enddate AS enddate,
     facilities.code AS code_site,
     facilities.name AS site,
