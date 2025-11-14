@@ -477,7 +477,7 @@ def extract_data_from_esigl(
         products_code = data_elements_routine["code"].unique().to_list()
 
     dico_products = {
-        row["code_produit"]: row["ancien_code"]
+        str(row["code_produit"]): row["ancien_code"]
         for row in df_de_mapping.filter(pl.col("code_produit").is_not_null())
         .select(["ancien_code", "code_produit"])
         .iter_rows(named=True)
@@ -490,7 +490,7 @@ def extract_data_from_esigl(
     ]
 
     if extended_product_code:
-        products_code.extend(extended_product_code)
+        products_code.extend(extended_product_code)  # type: ignore
 
     query_etat_stock += f" AND requisition_line_items.productcode IN {tuple(products_code) if len(products_code) > 1 else f'({products_code[0]!r})'}"  # noqa: E501
 

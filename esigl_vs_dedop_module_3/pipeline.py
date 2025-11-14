@@ -244,6 +244,9 @@ def process_periods(
         )
         raise ValueError("La date de début doit être antérieure ou égale à la date de fin.")
 
+    if start_dt.month == end_dt.month and start_dt.year == end_dt.year:
+        return [start_dt.strftime("%Y-%m-%d"), end_dt.strftime("%Y-%m-%d")]
+
     dates = list(rrule.rrule(freq=rrule.MONTHLY, dtstart=start_dt, until=end_dt))
     return sorted({dt.strftime("%Y-%m-%d") for dt in dates})
 
@@ -355,9 +358,10 @@ def fetch_dhis2_data(
     pl.DataFrame
         A DataFrame containing the fetched data.
     """
-    periods_range = [
+    periods_range = {
         datetime.strptime(f"{pe}", "%Y-%m-%d").strftime("%Y%m") for pe in periods_range
-    ]  # type: ignore
+    }  # type: ignore
+    periods_range = sorted(periods_range)
     msg_info = (
         "⏳ Extraction des données DHIS2 depuis le DEDOP "
         f"aux périodes: `{', '.join(periods_range)}`..."
@@ -376,9 +380,11 @@ def fetch_dhis2_data(
             include_children=True,
             periods=periods_range,  # type: ignore
         )
-        df_data_ddp = dhis2.meta.add_coc_name_column(df_data_ddp, "category_option_combo_id")  # type: ignore
+        df_data_ddp = dhis2.meta.add_dx_name_column(df_data_ddp, "data_element_id")
+        df_data_ddp = dhis2.meta.add_coc_name_column(df_data_ddp, "category_option_combo_id")
+        df_data_ddp = dhis2.meta.add_org_unit_name_column(df_data_ddp, "organisation_unit_id")
         df_data_ddp = df_data_ddp.with_columns(
-            pl.col("value").cast(pl.Int64),
+            pl.col("value").cast(pl.Float64).cast(pl.Int64),
             pl.col("dx_name").str.replace(r"PNLP-|GTC-", "").str.strip_chars().alias("dx_name"),
         )  # type: ignore
         current_run.log_info(f"Extracted {df_data_ddp.shape[0]} records from DEDOP")
@@ -440,16 +446,18 @@ def fetch_metabase_routine_data(
     products_code = data_elements_routine["code"].unique().to_list()
 
     dico_products = {
-        row["code_produit"]: row["ancien_code"]
+        str(row["code_produit"]): row["ancien_code"]
         for row in df_de_mapping.filter(pl.col("code_produit").is_not_null())
         .select(["ancien_code", "code_produit"])
         .iter_rows(named=True)
     }
+    current_run.log_debug(f"Product code mapping: {dico_products}")
     extended_product_code = [
         dico_products[code_produit]
         for code_produit in products_code
         if code_produit in dico_products
     ]
+    current_run.log_debug(f"Extended product codes: {extended_product_code}")
 
     if extended_product_code:
         products_code.extend(extended_product_code)

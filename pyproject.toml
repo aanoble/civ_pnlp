@@ -87,12 +87,14 @@ venvPath = "."
 venv = "../openhexa_venv"
 pythonVersion = "3.13"
 typeCheckingMode = "basic"
+reportOptionalIterable = false
 reportMissingTypeStubs = false
 reportMissingImports = false
 reportArgumentType = false
 reportCallIssue = false
 reportMissingModuleSource = false
 reportOptionalSubscript = false
+reportOptionalMemberAccess = false
 exclude = [
     "other files/",
     "superset_dashboard/",
