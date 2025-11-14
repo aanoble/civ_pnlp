@@ -422,6 +422,9 @@ def extract_data_from_esigl(
             current_run.log_critical(error_msg)
 
         products_code = [code for code in products_code if code not in wrong_product_code]
+        if not products_code:
+            error_msg = "No valid product codes provided after validation."
+            current_run.log_critical(error_msg)
 
         current_run.log_info(f"Filtering data for products: {', '.join(products_code)}")
     else:
@@ -431,9 +434,9 @@ def extract_data_from_esigl(
         EXTENDED_PRODUCT_CODE[code_produit]
         for code_produit in products_code
         if code_produit in EXTENDED_PRODUCT_CODE
-    ]
+    ]  # type: ignore
     if extended_product_code:
-        products_code.extend(extended_product_code)
+        products_code.extend(extended_product_code)  # type: ignore
 
     products_code = f" rli.productcode IN {tuple(products_code) if len(products_code) > 1 else f'({products_code[0]!r})'}"  # type: ignore # noqa: E501
 

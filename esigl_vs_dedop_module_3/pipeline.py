@@ -1,10 +1,13 @@
 """Pipeline for eSIGL vs Dedop Module 3 data comparison and analysis."""
 
 import json
+import locale
 from datetime import datetime
 from pathlib import Path
+from typing import Literal
 
 import polars as pl
+import psycopg2
 from constants import COC_MAPPING, EXTENDED_PRODUCT_CODE
 from dateutil import rrule
 from dateutil.relativedelta import relativedelta
@@ -48,17 +51,6 @@ from utils import (
     required=True,
 )
 @parameter(
-    "fp_ou_de_mapping",
-    type=File,
-    name="File path OrgUnit and dataElement mapping eSIGL to DHIS2",
-    help=(
-        "File path OrgUnit and dataElement mapping eSIGL to DHIS2 "
-        "located in directory `metabase eSIGL/data/ressources`"
-    ),
-    default="metabase eSIGL/data/ressources/Fichier mapping OrgUnit eSIGL DHIS2.xlsx",
-    required=True,
-)
-@parameter(
     code="start_date",
     type=str,  # type: ignore
     name="Start date (YYYY-MM-DD)",
@@ -80,6 +72,17 @@ from utils import (
     default=24,
     required=False,
 )
+@parameter(
+    "fp_ou_de_mapping",
+    type=File,
+    name="File path OrgUnit and dataElement eSIGL to DHIS2",
+    help=(
+        "File path OrgUnit and dataElement mapping eSIGL to DHIS2 "
+        "located in directory `metabase eSIGL/data/ressources`"
+    ),
+    default="metabase eSIGL/data/ressources/Fichier mapping OrgUnit eSIGL DHIS2.xlsx",
+    required=True,
+)
 def esigl_vs_dedop_module_3(
     dedop_connection: DHIS2Connection,
     metabase_connection: CustomConnection,
@@ -88,9 +91,22 @@ def esigl_vs_dedop_module_3(
     end_date: str | None,
     months_back: int,
 ):
-    """Write your pipeline orchestration here.
+    """Orchestrates the eSIGL vs Dedop Module 3 data comparison and analysis pipeline.
 
-    Pipeline functions should only call tasks and should never perform IO operations or expensive computations.
+    Parameters.
+    ----------
+        dedop_connection : DHIS2Connection
+            Connection parameters for the Dedop DHIS2 instance.
+        metabase_connection : CustomConnection
+            Connection parameters for the Metabase instance.
+        fp_ou_de_mapping : str
+            File path for OrgUnit and dataElement mapping eSIGL to DHIS2.
+        start_date : str | None
+            Start date for DHIS2 extraction (format: YYYY-MM-DD)
+        end_date : str | None
+            End date for DHIS2 extraction (format: YYYY-MM-DD)
+        months_back : int
+            Number of months to look back from the current month to refresh data.
     """
     # Chargement des fichiers de ressources
     df_ou_mapping = read_ressources_files(file_path=fp_ou_de_mapping, sheet_name="OrgUnit")
@@ -130,7 +146,7 @@ def esigl_vs_dedop_module_3(
     )
 
     # Extraction des données Metabase
-    df_etat_stock = fetch_metabase_routine_data(
+    df_metabase_routine = fetch_metabase_routine_data(
         metabase=metabase,
         df_ou_mapping=df_ou_mapping,
         df_de_mapping=df_de_mapping,
@@ -138,11 +154,74 @@ def esigl_vs_dedop_module_3(
         periods_range=periods_range,
     )
 
-    df_etat_stock_gtc = fetch_metabase_gtc_data(
+    df_metabase_gtc = fetch_metabase_gtc_data(
         metabase=metabase,
         df_ou_mapping=df_ou_mapping,
         data_elements_gtc=data_elements_gtc,
         periods_range=periods_range,
+    )
+
+    # Evaluation globale de la cohérence des données entre esigl et dedop
+    df_compare = compare_esigl_dedop(
+        dhis2=dedop,
+        df_data_ddp=df_data_ddp,
+        df_metabase_routine=df_metabase_routine,
+        df_metabase_gtc=df_metabase_gtc,
+    )
+
+    # Evaluation de la cohérence des données
+    df_coherence = evaluate_data_coherence(dhis2=dedop, df_compare=df_compare)
+
+    # Evaluation de la complétude des donnée
+    df_completude = evaluate_data_completeness(
+        dhis2=dedop,
+        df_data_ddp=df_data_ddp,
+        df_metabase_routine=df_metabase_routine,
+        df_metabase_gtc=df_metabase_gtc,
+    )
+
+    # Standardisation des données ajout des informations d'unité d'organisation
+    df_compare = process_data_with_org_units(
+        df_data=df_compare, df_org_units=df_org_units, table_name="esigl_vs_dedop_data_module_3"
+    )
+
+    # Cohérence avec tracabilité
+    df_coherence_tracabilite = process_data_with_org_units(
+        df_data=df_coherence,
+        df_org_units=df_org_units,
+        table_name="esigl_vs_dedop_data_module_3_coherence_tracabilite",
+    )
+
+    df_coherence = process_data_with_org_units(
+        df_data=df_coherence,
+        df_org_units=df_org_units,
+        table_name="esigl_vs_dedop_data_module_3_coherence",
+    )
+
+    # Complétude par district
+    df_completude_district = process_data_with_org_units(
+        df_data=df_completude,
+        df_org_units=df_org_units,
+        table_name="esigl_vs_dedop_data_module_3_completude_district",
+    )
+
+    df_completude = process_data_with_org_units(
+        df_data=df_completude,
+        df_org_units=df_org_units,
+        table_name="esigl_vs_dedop_data_module_3_completude",
+    )
+
+    # Exportation des données vers la BD
+    export_to_database(df_data=df_compare, table_name="esigl_vs_dedop_data_module_3")
+    export_to_database(df_data=df_coherence, table_name="esigl_vs_dedop_data_module_3_coherence")
+    export_to_database(
+        df_data=df_coherence_tracabilite,
+        table_name="esigl_vs_dedop_data_module_3_coherence_tracabilite",
+    )
+    export_to_database(df_data=df_completude, table_name="esigl_vs_dedop_data_module_3_completude")
+    export_to_database(
+        df_data=df_completude_district,
+        table_name="esigl_vs_dedop_data_module_3_completude_district",
     )
 
 
@@ -152,8 +231,6 @@ def fetch_organisation_units(dedop: DHIS2) -> pl.DataFrame:
 
     Parameters
     ----------
-    snis : DHIS2
-        The DHIS2 instance for SNIS.
     dedop : DHIS2
         The DHIS2 instance for Dedop.
 
@@ -380,9 +457,7 @@ def fetch_dhis2_data(
             include_children=True,
             periods=periods_range,  # type: ignore
         )
-        df_data_ddp = dhis2.meta.add_dx_name_column(df_data_ddp, "data_element_id")
         df_data_ddp = dhis2.meta.add_coc_name_column(df_data_ddp, "category_option_combo_id")
-        df_data_ddp = dhis2.meta.add_org_unit_name_column(df_data_ddp, "organisation_unit_id")
         df_data_ddp = df_data_ddp.with_columns(
             pl.col("value").cast(pl.Float64).cast(pl.Int64),
             pl.col("dx_name").str.replace(r"PNLP-|GTC-", "").str.strip_chars().alias("dx_name"),
@@ -451,36 +526,36 @@ def fetch_metabase_routine_data(
         .select(["ancien_code", "code_produit"])
         .iter_rows(named=True)
     }
-    current_run.log_debug(f"Product code mapping: {dico_products}")
     extended_product_code = [
         dico_products[code_produit]
         for code_produit in products_code
         if code_produit in dico_products
     ]
-    current_run.log_debug(f"Extended product codes: {extended_product_code}")
 
     if extended_product_code:
         products_code.extend(extended_product_code)
+
+    current_run.log_debug(f"Product codes: {products_code}")
 
     query_etat_stock = QUERY_ETAT_STOCK
     query_etat_stock += f" AND requisition_line_items.productcode IN {tuple(products_code) if len(products_code) > 1 else f'({products_code[0]!r})'}"  # noqa: E501
     sql_query = query_etat_stock.format(processing_periods=processing_periods)
 
-    current_run.log_debug(sql_query)
+    # current_run.log_debug(sql_query)
     try:
-        df_etat_stock = pl.DataFrame(metabase.get_data_from_sql_query(sql_query=sql_query))
+        df_metabase_routine = pl.DataFrame(metabase.get_data_from_sql_query(sql_query=sql_query))
     except Exception as e:
         current_run.log_error(f"Erreur lors de l'extraction depuis Metabase: {e}")
         raise
 
     # Jointure des métadonnées
     mapping = {v: k for k, v in dico_products.items()}
-    df_etat_stock = df_etat_stock.with_columns(pl.col("code_produit").cast(pl.String)).with_columns(
-        pl.col("code_produit").replace(mapping).alias("code_produit")
-    )
+    df_metabase_routine = df_metabase_routine.with_columns(
+        pl.col("code_produit").cast(pl.String)
+    ).with_columns(pl.col("code_produit").replace(mapping).alias("code_produit"))
 
     # Code produit eSIGL -> code produit DHIS2
-    df_etat_stock = df_etat_stock.join(
+    df_metabase_routine = df_metabase_routine.join(
         data_elements_routine.select(
             pl.col("id").alias("data_element_id"), pl.col("code").alias("code_produit")
         ),
@@ -494,27 +569,27 @@ def fetch_metabase_routine_data(
         .select(pl.col("New_Code").cast(str), pl.col("ID_Dhis2"))
         .rename({"New_Code": "code_site", "ID_Dhis2": "organisation_unit_id"})
     )
-    df_etat_stock = df_etat_stock.join(
+    df_metabase_routine = df_metabase_routine.join(
         df_ou_mapping,
         on="code_site",
         how="inner",
     )
     # Renommage des colonnes d'intérêt
-    df_etat_stock = df_etat_stock.rename(COC_MAPPING)
+    df_metabase_routine = df_metabase_routine.rename(COC_MAPPING)
 
-    current_run.log_info(f"Extracted {df_etat_stock.shape[0]} records from eSIGL")
-    df_etat_stock = df_etat_stock.unpivot(
+    current_run.log_info(f"Extracted {df_metabase_routine.shape[0]} records from eSIGL")
+    df_metabase_routine = df_metabase_routine.unpivot(
         index=["data_element_id", "period", "organisation_unit_id"],
         on=list(COC_MAPPING.values()),
         variable_name="category_option_combo_id",
         value_name="value",
     ).with_columns(pl.col("value").cast(pl.Int64))
 
-    df_etat_stock = df_etat_stock.group_by(
+    df_metabase_routine = df_metabase_routine.group_by(
         ["data_element_id", "period", "organisation_unit_id", "category_option_combo_id"]
     ).agg(pl.col("value").sum().alias("value"))
-    current_run.log_debug(f"Routine DataFrame columns: {df_etat_stock.columns}")
-    return df_etat_stock
+    current_run.log_debug(f"Routine DataFrame columns: {df_metabase_routine.columns}")
+    return df_metabase_routine
 
 
 @esigl_vs_dedop_module_3.task
@@ -579,19 +654,19 @@ def fetch_metabase_gtc_data(
     )
     current_run.log_debug(sql_query)
     try:
-        df_etat_stock_gtc = pl.DataFrame(metabase.get_data_from_sql_query(sql_query=sql_query))
+        df_metabase_gtc = pl.DataFrame(metabase.get_data_from_sql_query(sql_query=sql_query))
     except Exception as e:
         current_run.log_error(f"Erreur lors de l'extraction depuis Metabase: {e}")
         raise
 
     # Jointure des métadonnées
     mapping = {v: k for k, v in EXTENDED_PRODUCT_CODE.items()}
-    df_etat_stock_gtc = df_etat_stock_gtc.with_columns(
+    df_metabase_gtc = df_metabase_gtc.with_columns(
         pl.col("code_produit").cast(pl.String)
     ).with_columns(pl.col("code_produit").replace(mapping).alias("code_produit"))
 
     # Code produit eSIGL -> code produit DHIS2
-    df_etat_stock_gtc = df_etat_stock_gtc.join(
+    df_metabase_gtc = df_metabase_gtc.join(
         data_elements_gtc.select(
             pl.col("id").alias("data_element_id"), pl.col("code").alias("code_produit")
         ),
@@ -605,28 +680,511 @@ def fetch_metabase_gtc_data(
         .select(pl.col("New_Code").cast(str), pl.col("ID_Dhis2"))
         .rename({"New_Code": "code_site", "ID_Dhis2": "organisation_unit_id"})
     )
-    df_etat_stock_gtc = df_etat_stock_gtc.join(
+    df_metabase_gtc = df_metabase_gtc.join(
         df_ou_mapping,
         on="code_site",
         how="inner",
     )
     # Renommage des colonnes d'intérêt
-    df_etat_stock_gtc = df_etat_stock_gtc.rename(COC_MAPPING)
+    df_metabase_gtc = df_metabase_gtc.rename(COC_MAPPING)
 
-    current_run.log_info(f"Extracted {df_etat_stock_gtc.shape[0]} GTC records from eSIGL")
-    df_etat_stock_gtc = df_etat_stock_gtc.unpivot(
+    current_run.log_info(f"Extracted {df_metabase_gtc.shape[0]} GTC records from eSIGL")
+    df_metabase_gtc = df_metabase_gtc.unpivot(
         index=["data_element_id", "period", "organisation_unit_id"],
         on=list(COC_MAPPING.values()),
         variable_name="category_option_combo_id",
         value_name="value",
     ).with_columns(pl.col("value").cast(pl.Int64))
 
-    df_etat_stock_gtc = df_etat_stock_gtc.group_by(
+    df_metabase_gtc = df_metabase_gtc.group_by(
         ["data_element_id", "period", "organisation_unit_id", "category_option_combo_id"]
     ).agg(pl.col("value").sum().alias("value"))
 
-    current_run.log_debug(f"GTC DataFrame columns: {df_etat_stock_gtc.columns}")
-    return df_etat_stock_gtc
+    current_run.log_debug(f"GTC DataFrame columns: {df_metabase_gtc.columns}")
+    return df_metabase_gtc
+
+
+@esigl_vs_dedop_module_3.task
+def compare_esigl_dedop(
+    dhis2: DHIS2,
+    df_data_ddp: pl.DataFrame,
+    df_metabase_routine: pl.DataFrame,
+    df_metabase_gtc: pl.DataFrame,
+) -> pl.DataFrame:
+    """Compare eSIGL data from Metabase with Dedop data from DHIS2.
+
+    Parameters
+    ----------
+    dhis2 : DHIS2
+        The DHIS2 instance to fetch data from.
+    df_data_ddp : pl.DataFrame
+        DataFrame containing Dedop data from DHIS2.
+    df_metabase_routine : pl.DataFrame
+        DataFrame containing routine data from Metabase.
+    df_metabase_gtc : pl.DataFrame
+        DataFrame containing GTC data from Metabase.
+
+    Returns
+    -------
+    pl.DataFrame
+        A DataFrame containing the comparison results.
+    """
+    current_run.log_info("⏳ Comparing eSIGL data from Metabase with Dedop data from DHIS2...")
+
+    df_metabase = pl.concat([df_metabase_routine, df_metabase_gtc], how="diagonal_relaxed")
+
+    df_merged = df_metabase.join(
+        df_data_ddp,
+        on=[
+            "data_element_id",
+            "period",
+            "organisation_unit_id",
+            "category_option_combo_id",
+        ],
+        how="inner",
+        suffix="_ddp",
+    )
+    df_merged = dhis2.meta.add_dx_name_column(df_merged, "data_element_id")
+    df_merged = dhis2.meta.add_org_unit_name_column(df_merged, "organisation_unit_id")
+
+    df_merged = df_merged.rename({"value": "value_esigl"})
+
+    df_merged = df_merged.with_columns(
+        (pl.col("value_esigl") - pl.col("value_ddp")).abs().alias("ecart"),
+        ((pl.col("value_esigl") - pl.col("value_ddp")).abs() / pl.col("value_esigl")).alias(
+            "ecart_relatif"
+        ),
+    )  # type: ignore
+
+    df_merged = df_merged.with_columns(
+        pl.when(pl.col("value_esigl") == 0)
+        .then(None)
+        .otherwise(pl.col("ecart_relatif"))
+        .alias("ecart_relatif")
+    )
+
+    locale.setlocale(locale.LC_TIME, "fr_FR.UTF-8")
+    return df_merged.with_columns(
+        pl.col("period")
+        .cast(pl.Utf8)
+        .str.strptime(pl.Datetime("ns"), "%Y%m")
+        .cast(pl.Date)
+        .alias("date_report")
+    ).with_columns(
+        pl.col("period").map_elements(
+            lambda col: datetime.strptime(f"{col}01", "%Y%m%d").strftime("%B %Y").capitalize(),
+            return_dtype=pl.String,
+        )
+    )
+
+
+@esigl_vs_dedop_module_3.task
+def evaluate_data_coherence(
+    dhis2: DHIS2,
+    df_compare: pl.DataFrame,
+) -> pl.DataFrame:
+    """Evaluate overall data coherence between eSIGL and Dedop.
+
+    Parameters
+    ----------
+    dhis2 : DHIS2
+        The DHIS2 instance to fetch data from.
+    df_compare : pl.DataFrame
+        DataFrame containing the comparison results.
+
+    Returns
+    -------
+    pl.DataFrame
+        A DataFrame containing the coherence evaluation results.
+    """
+    current_run.log_info("⏳ Evaluating overall data coherence between eSIGL and Dedop...")
+
+    # Placeholder for coherence evaluation logic
+    df_coherence = (
+        df_compare.with_columns(
+            [
+                # Cohérence = écart = 0 OU les deux valeurs nulles
+                (
+                    (pl.col("ecart") == 0)
+                    | (pl.col("value_esigl").is_null() & pl.col("value_ddp").is_null())
+                ).alias("est_coherent"),
+                # Incohérence = écart non nul et au moins une valeur non null
+                (pl.col("ecart").is_not_null() & pl.col("ecart") != 0).alias("est_incoherent"),
+                # Toutes les lignes comptent comme comparables
+                pl.lit(True).alias("est_comparable"),
+            ]
+        )
+        .group_by(
+            [
+                "date_report",
+                "period",
+                "organisation_unit_id",
+                "data_element_id",
+            ]
+        )
+        .agg(
+            [
+                pl.sum("est_coherent").alias("nb_coherents"),
+                pl.sum("est_incoherent").alias("nb_incoherents"),
+                pl.sum("est_comparable").alias("nb_comparables"),
+                (pl.sum("est_coherent") / pl.sum("est_comparable")).alias("taux_coherence"),
+                (pl.sum("est_incoherent") / pl.sum("est_comparable")).alias("taux_incoherence"),
+            ]
+        )
+        .with_columns(
+            [
+                (pl.col("taux_coherence") * 100).round(1).alias("taux_coherence"),
+                (pl.col("taux_incoherence") * 100).round(1).alias("taux_incoherence"),
+            ]
+        )
+        .select(
+            [
+                "period",
+                "date_report",
+                "organisation_unit_id",
+                "data_element_id",
+                "nb_comparables",
+                "nb_coherents",
+                "nb_incoherents",
+                "taux_coherence",
+                "taux_incoherence",
+            ]
+        )
+        .sort("taux_incoherence", descending=True)
+    )
+    df_coherence = dhis2.meta.add_org_unit_name_column(df_coherence, "organisation_unit_id")
+    return dhis2.meta.add_dx_name_column(df_coherence, "data_element_id")  # type: ignore
+
+
+@esigl_vs_dedop_module_3.task
+def evaluate_data_completeness(
+    dhis2: DHIS2,
+    df_data_ddp: pl.DataFrame,
+    df_metabase_routine: pl.DataFrame,
+    df_metabase_gtc: pl.DataFrame,
+) -> pl.DataFrame:
+    """Evaluate overall data completeness between eSIGL and Dedop.
+
+    Parameters
+    ----------
+    dhis2 : DHIS2
+        The DHIS2 instance to fetch data from.
+    df_data_ddp : pl.DataFrame
+        DataFrame containing Dedop data from DHIS2.
+    df_metabase_routine : pl.DataFrame
+        DataFrame containing routine data from Metabase.
+    df_metabase_gtc : pl.DataFrame
+        DataFrame containing GTC data from Metabase.
+
+    Returns
+    -------
+    pl.DataFrame
+        A DataFrame containing the completeness evaluation results.
+    """
+    current_run.log_info("⏳ Evaluating overall data completeness between eSIGL and Dedop...")
+    selected_cols = [
+        "period",
+        "organisation_unit_id",
+        "data_element_id",
+        "category_option_combo_id",
+    ]
+    df_metabase = pl.concat([df_metabase_routine, df_metabase_gtc], how="diagonal_relaxed")
+
+    df_completude = (
+        df_metabase.select(selected_cols)
+        .unique()
+        .join(
+            df_data_ddp.select(selected_cols)
+            .unique()
+            .with_columns([pl.lit(True).alias("ddp_present")]),
+            on=selected_cols,
+            how="left",
+        )
+        .with_columns(
+            [pl.when(pl.col("ddp_present").is_null()).then(True).otherwise(False).alias("manquant")]
+        )
+    )
+
+    df_completude = df_completude.with_columns(
+        [pl.when(~pl.col("manquant")).then(1).otherwise(0).alias("present")]
+    )
+    df_completude = (
+        df_completude.group_by(["period", "organisation_unit_id", "data_element_id"])
+        .agg(
+            [
+                pl.len().alias("nb_total_valeurs_esigl"),
+                pl.sum("present").alias("nb_valeurs_importe_ddp"),
+                (pl.sum("present") / pl.len()).alias("taux_completude"),
+            ]
+        )
+        .with_columns([(pl.col("taux_completude") * 100).round(1)])
+        .sort("taux_completude", descending=True)
+    )
+    locale.setlocale(locale.LC_TIME, "fr_FR.UTF-8")
+    df_completude = df_completude.with_columns(
+        pl.col("period")
+        .cast(pl.Utf8)
+        .str.strptime(pl.Datetime("ns"), "%Y%m")
+        .cast(pl.Date)
+        .alias("date_report")
+    ).with_columns(
+        pl.col("period").map_elements(
+            lambda col: datetime.strptime(f"{col}01", "%Y%m%d").strftime("%B %Y").capitalize(),
+            return_dtype=pl.String,
+        )
+    )
+
+    df_completude = dhis2.meta.add_org_unit_name_column(df_completude, "organisation_unit_id")
+    return dhis2.meta.add_dx_name_column(df_completude, "data_element_id")  # type: ignore
+
+
+@esigl_vs_dedop_module_3.task
+def process_data_with_org_units(
+    df_data: pl.DataFrame, df_org_units: pl.DataFrame, table_name: str
+) -> pl.DataFrame:
+    """Process data by joining with organisation units and saving to a table.
+
+    Parameters
+    ----------
+    df_data : pl.DataFrame
+        The DataFrame to process.
+    df_org_units : pl.DataFrame
+        The DataFrame containing organisation units.
+    table_name : str
+        The name of the table to save the processed data to.
+
+    Returns
+    -------
+    pl.DataFrame
+        The processed DataFrame.
+    """
+    df_processed = df_data.join(
+        df_org_units.select(
+            [
+                pl.col("id"),
+                pl.col("level_2_name").alias("region"),
+                pl.col("level_3_name").alias("district"),
+                pl.col("level_3_id").alias("level_3_id"),
+                pl.col("level").alias("type_ou"),
+            ]
+        ),
+        left_on="organisation_unit_id",
+        right_on="id",
+    ).with_columns(
+        pl.when(pl.col("type_ou") == 4)
+        .then(pl.lit("Établissement sanitaire"))
+        .when(pl.col("type_ou") == 3)
+        .then(pl.lit("District sanitaire"))
+        .when(pl.col("type_ou") == 2)
+        .then(pl.lit("Région sanitaire"))
+        .otherwise(pl.lit("level_5"))
+        .alias("type_ou"),
+        pl.col("co_name").str.replace("SIG -", "").str.strip_chars().alias("dx_name"),
+    )
+    if table_name == "esigl_vs_dedop_data_module_3":
+        df_processed = (
+            df_processed.select(
+                [
+                    "period",
+                    "date_report",
+                    "region",
+                    "district",
+                    "ou_name",
+                    "type_ou",
+                    "dx_name",
+                    "co_name",
+                    "value_esigl",
+                    "value_ddp",
+                    "ecart",
+                    "ecart_relatif",
+                    "created",
+                ],
+            )
+            .filter(pl.col("ecart") != 0)
+            .with_columns(pl.col("ecart_relatif").fill_null(0).round(2))
+        )
+
+    if table_name == "esigl_vs_dedop_data_module_3_coherence":
+        df_processed = df_processed.select(
+            [
+                "period",
+                "date_report",
+                "region",
+                "district",
+                "ou_name",
+                "type_ou",
+                "dx_name",
+                "nb_comparables",
+                "nb_coherents",
+                "nb_incoherents",
+                "taux_coherence",
+                "taux_incoherence",
+            ],
+        )
+
+    if table_name == "esigl_vs_dedop_data_module_3_coherence_tracabilite":
+        df_processed = (
+            df_processed.with_columns(
+                pl.lit(datetime.now()).cast(pl.Date).alias("date_controle"),
+            )
+            .select(
+                [
+                    "period",
+                    "date_report",
+                    "region",
+                    "district",
+                    "date_controle",
+                    # "ou_name",
+                    # "dx_name",
+                    "nb_comparables",
+                    "nb_coherents",
+                    "nb_incoherents",
+                ],
+            )
+            .group_by(
+                [
+                    "period",
+                    "date_report",
+                    "region",
+                    "district",
+                    "date_controle",
+                    # "ou_name",
+                    # "dx_name",
+                ]
+            )
+            .agg(
+                [
+                    pl.sum("nb_comparables").alias("nb_comparables"),
+                    pl.sum("nb_coherents").alias("nb_coherents"),
+                    pl.sum("nb_incoherents").alias("nb_incoherents"),
+                ]
+            )
+        )
+
+    if table_name == "esigl_vs_dedop_data_module_3_completude":
+        df_processed = df_processed.select(
+            [
+                "period",
+                "date_report",
+                "region",
+                "district",
+                "ou_name",
+                "type_ou",
+                "dx_name",
+                "nb_total_valeurs_esigl",
+                "nb_valeurs_importe_ddp",
+                "taux_completude",
+            ],
+        )
+    if table_name == "esigl_vs_dedop_data_module_3_completude_district":
+        df_processed = (
+            df_processed.join(
+                df_org_units.select(
+                    [
+                        pl.col("id"),
+                        pl.col("coordinates").alias("coordinates"),
+                    ]
+                ),
+                left_on="level_3_id",
+                right_on="id",
+            )
+            .select(
+                [
+                    "period",
+                    "date_report",
+                    "region",
+                    "district",
+                    "dx_name",
+                    "nb_total_valeurs_esigl",
+                    "nb_valeurs_importe_ddp",
+                    "coordinates",
+                ],
+            )
+            .group_by(
+                [
+                    "period",
+                    "date_report",
+                    "region",
+                    "district",
+                    "dx_name",
+                    "coordinates",
+                ]
+            )
+            .agg(
+                [
+                    pl.sum("nb_total_valeurs_esigl").alias("nb_total_valeurs_esigl"),
+                    pl.sum("nb_valeurs_importe_ddp").alias("nb_valeurs_importe_ddp"),
+                ]
+            )
+        )
+
+    return df_processed
+
+
+@esigl_vs_dedop_module_3.task
+def export_to_database(
+    df_data: pl.DataFrame,
+    table_name: str,
+    mode: Literal["append", "replace", "fail"] = "append",
+) -> None:
+    """Export the DataFrame to the specified database table.
+
+    Parameters
+    ----------
+    df_data : pl.DataFrame
+        The DataFrame to export.
+    table_name : str
+        The name of the database table to export to.
+    mode: Literal["append", "replace", "fail"]
+        Export mode, one of "append", "replace", or "fail".
+    """
+    if df_data.is_empty():
+        current_run.log_info(f"Aucune donnée à exporter vers la table `{table_name}`.")
+        return
+
+    current_run.log_info(f"Export des données vers la table `{table_name}` de la base de données.")
+
+    periode_range = df_data["period"].unique().to_list()
+    periode_range = tuple(periode_range) if len(periode_range) > 1 else f"('{periode_range[0]}')"
+
+    manager_conn = psycopg2.connect(workspace.database_url)
+    manager_conn.autocommit = False
+    manager_cursor = manager_conn.cursor()
+
+    query = (
+        f"""
+        DELETE FROM "{table_name}"
+        WHERE period in {periode_range}
+    """
+        if table_name != "esigl_vs_dedop_data_module_3_coherence_tracabilite"
+        else f"""
+        DELETE FROM "{table_name}"
+        WHERE date_controle = '{datetime.now().date().strftime("%Y-%m-%d")}'
+    """
+    )
+    manager_cursor.execute(query)
+    deleted_rows = manager_cursor.rowcount
+
+    if deleted_rows > 0:
+        current_run.log_info(
+            f"{deleted_rows} enregistrements supprimés de la table `{table_name}` pour mise à jour."
+        )
+        manager_conn.commit()
+
+    selected_columns = pl.read_database_uri(
+        query=f"""SELECT column_name
+        FROM information_schema.columns
+        WHERE table_name = '{table_name}'
+        """,
+        uri=workspace.database_url,
+    )["column_name"].to_list()
+
+    df_data[selected_columns].write_database(
+        table_name=table_name,
+        connection=workspace.database_url,
+        if_table_exists=mode,
+    )  # type: ignore
+    current_run.add_database_output(table_name)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,34 @@
+name: Push esigl_vs_dedop_module_3
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/push_esigl_vs_dedop_module_3.yaml"
+      - "esigl_vs_dedop_module_3/**"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - uses: actions/setup-python@v2
+        with:
+          python-version: '3.11'
+      
+      - name: Configure OpenHEXA CLI
+        uses: blsq/openhexa-cli-action@v1
+        with:
+          workspace: "nmdr-civ"
+          token: ${{ secrets.OH_TOKEN }}
+      - name: Push pipeline to OpenHEXA
+        run: |
+          openhexa pipelines push esigl_vs_dedop_module_3 \
+            --code "esigl-vs-dedop-module-3" \
+            --description "${{ github.event.head_commit.message }}" \
+            --link "https://github.com/aanoble/civ_pnlp/commit/${{ github.sha }}" \
+            --yes
