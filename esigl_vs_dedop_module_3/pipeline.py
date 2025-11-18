@@ -988,7 +988,6 @@ def process_data_with_org_units(
         .then(pl.lit("Région sanitaire"))
         .otherwise(pl.lit("level_5"))
         .alias("type_ou"),
-        pl.col("co_name").str.replace("SIG -", "").str.strip_chars().alias("dx_name"),
     )
     if table_name == "esigl_vs_dedop_data_module_3":
         df_processed = (
@@ -1010,7 +1009,10 @@ def process_data_with_org_units(
                 ],
             )
             .filter(pl.col("ecart") != 0)
-            .with_columns(pl.col("ecart_relatif").fill_null(0).round(2))
+            .with_columns(
+                pl.col("ecart_relatif").fill_null(0).round(2),
+                pl.col("co_name").str.replace("SIG -", "").str.strip_chars().alias("co_name"),
+            )
         )
 
     if table_name == "esigl_vs_dedop_data_module_3_coherence":
