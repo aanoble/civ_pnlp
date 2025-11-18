@@ -367,14 +367,14 @@ def extract_data_from_esigl(
 
     # Conversion et gestion des dates
     start_dt = parse_cutoff_date(start_date) if start_date else datetime.now()
-    start_dt = start_dt.replace(day=1)
+    start_dt = start_dt.replace(day=1)  # ajustement des dates extractions
     if not start_date:
         current_run.log_info(
             f"No start date provided, defaulting to current date: {start_dt.strftime('%Y-%m-%d')}"
         )
 
     end_dt = parse_cutoff_date(end_date) if end_date else start_dt
-    end_dt = end_dt + relativedelta(day=31)
+    end_dt = end_dt + relativedelta(day=31)  # ajustement des dates extractions
     if not end_date:
         current_run.log_info(
             f"No end date provided, defaulting to end of month: {end_dt.strftime('%Y-%m-%d')}"
@@ -555,10 +555,6 @@ def push_data_to_dhis2(
         Dict de résumé d'import agrégé.
     """
     total = len(payload)
-    payload_fp = Path(workspace.files_path) / "payload.json"
-    with payload_fp.open("w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2)
-        current_run.log_debug(f"Payload saved to {payload_fp}")
 
     if total == 0:
         return {"status": "skipped", "imported": 0}
