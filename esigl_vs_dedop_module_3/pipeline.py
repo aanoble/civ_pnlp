@@ -1011,7 +1011,7 @@ def process_data_with_org_units(
             .filter(pl.col("ecart") != 0)
             .with_columns(
                 pl.col("ecart_relatif").fill_null(0).round(2),
-                pl.col("co_name").str.replace("SIG -", "").str.strip_chars().alias("co_name"),
+                pl.col("co_name").str.replace("SIGL-", "").str.strip_chars().alias("co_name"),
             )
         )
 
