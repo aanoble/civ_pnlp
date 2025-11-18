@@ -460,7 +460,6 @@ def fetch_dhis2_data(
         df_data_ddp = dhis2.meta.add_coc_name_column(df_data_ddp, "category_option_combo_id")
         df_data_ddp = df_data_ddp.with_columns(
             pl.col("value").cast(pl.Float64).cast(pl.Int64),
-            pl.col("dx_name").str.replace(r"PNLP-|GTC-", "").str.strip_chars().alias("dx_name"),
         )  # type: ignore
         current_run.log_info(f"Extracted {df_data_ddp.shape[0]} records from DEDOP")
         current_run.log_debug(f"DHIS2 DataFrame columns: {df_data_ddp.columns}")
