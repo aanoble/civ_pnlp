@@ -619,6 +619,9 @@ def fetch_metabase_gtc_data(
     periods_range = [datetime.strptime(f"{pe}", "%Y-%m-%d") for pe in periods_range]  # type: ignore
     start_dt = min(periods_range)
     end_dt = max(periods_range)
+    # Adjust to first and last day of month
+    start_dt = start_dt.replace(day=1)  # type: ignore
+    end_dt = end_dt + relativedelta(day=31)  # type: ignore
 
     msg_info = (
         "⏳ Extraction des données GTC depuis Metabase "
