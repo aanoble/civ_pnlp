@@ -175,7 +175,7 @@ def esigl_import_dhis2(
         post_batch_size: Taille des lots pour les requêtes POST DHIS2
     """
     df_ou_mapping = read_ressources_files(file_path=fp_ou_de_mapping, sheet_name="OrgUnit")
-    df_coc_mapping = read_ressources_files(fp_coc_mapping, schema=["coc", "col"])
+    df_coc_mapping = read_ressources_files(file_path=fp_coc_mapping, schema=["coc", "col"])
 
     dhis2 = DHIS2(connection=dhis2_connection, cache_dir=Path(workspace.files_path, ".cache"))
 
@@ -510,6 +510,7 @@ def prepare_data_for_dhis2(
     dfs: list[pl.DataFrame] = []
     for row in df_coc_mapping.iter_rows(named=True):
         col_name = row["col"]
+        current_run.log_debug(f"Processing COC '{row['coc']}' for column '{col_name}'")
         subset = df.filter(pl.col(col_name).is_not_null())
         if subset.is_empty():
             continue
