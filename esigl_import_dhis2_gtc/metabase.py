@@ -162,3 +162,16 @@ class Api:
             return session
         except requests.JSONDecodeError as e:
             raise MetabaseError("Réponse d'authentification invalide") from e
+
+    def ping(self):
+        """Vérifie la connectivité avec le serveur Metabase."""
+        try:
+            response = self.session.get(
+                f"{self.url}/health",
+                timeout=10,
+            )
+            response.raise_for_status()
+            if response.status_code != 200:
+                raise MetabaseError("Serveur Metabase inaccessible")
+        except requests.RequestException as e:
+            raise MetabaseError(f"Erreur de connectivité Metabase: {e}") from e

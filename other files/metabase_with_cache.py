@@ -302,16 +302,16 @@ class Api:
 
     def __init__(self, connection: CustomConnection):
         self._validate_connection(connection)
-        self.url = self.parse_url(connection.url)
+        self.url = self.parse_url(connection.url) # type: ignore
         self.token = None
-        self.session = self.authenticate(connection.username, connection.password)
+        self.session = self.authenticate(connection.username, connection.password) # type: ignore
 
     @staticmethod
     def _validate_connection(connection: CustomConnection):
         """Valide les paramètres de connexion."""
         if not connection:
             raise MetabaseError("Connexion requise")
-        if not all([connection.url, connection.username, connection.password]):
+        if not all([connection.url, connection.username, connection.password]): # type: ignore
             raise MetabaseError("URL, utilisateur et mot de passe requis")
 
     @staticmethod
@@ -339,7 +339,21 @@ class Api:
             return session
         except requests.exceptions.RequestException as e:
             raise MetabaseError(f"Erreur réseau: {e}") from e
-        except requests.JSONDecodeError as e:
+        except requests.JSONDecodeError as e: # type: ignore
             raise MetabaseError("Réponse d'authentification invalide") from e
         except KeyError as e:
             raise MetabaseError("Structure de réponse d'authentification invalide") from e
+        
+    def ping(self):
+        """Vérifie la connectivité avec le serveur Metabase."""
+        try:
+            response = self.session.get(
+                f"{self.url}/health",
+                timeout=10,
+            )
+            response.raise_for_status()
+            if response.status_code != 200:
+                raise MetabaseError("Serveur Metabase inaccessible")
+        except requests.RequestException as e:
+            raise MetabaseError(f"Erreur de connectivité Metabase: {e}") from e
+

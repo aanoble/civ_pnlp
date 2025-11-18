@@ -19,6 +19,7 @@ from openhexa.sdk import (
 )
 from openhexa.toolbox.dhis2 import DHIS2
 from queries import QUERY_ETAT_STOCK_GTC
+from utils import check_metabase_server_health, parse_cutoff_date
 
 EXTENDED_PRODUCT_CODE = {
     "3050345": "AM02170",
@@ -361,6 +362,8 @@ def extract_data_from_esigl(
         DataFrame combinant les données métier et les métadonnées
     """
     mb_client = Metabase(metabase)
+
+    check_metabase_server_health(mb_client)
 
     # Conversion et gestion des dates
     start_dt = parse_cutoff_date(start_date) if start_date else datetime.now()
@@ -710,25 +713,6 @@ def cleanup_old_directory_files(
                     current_run.log_info(f"Deleted old report directory: {item.as_posix()}")
             except Exception:
                 continue
-
-
-def parse_cutoff_date(date_str: str) -> datetime:
-    """Valide et convertit une date ISO en objet datetime.
-
-    Args:
-        date_str: Chaîne de date au format YYYY-MM-DD
-
-    Returns:
-        Objet datetime correspondant
-
-    Raises:
-        ValueError: Format de date invalide
-    """
-    try:
-        return datetime.strptime(date_str, "%Y-%m-%d")
-    except (ValueError, TypeError) as e:
-        current_run.log_error(f"Format de date invalide: '{date_str}' - {e!s}")
-        raise ValueError(f"Format de date invalide: '{date_str}'. Requis: YYYY-MM-DD") from e
 
 
 if __name__ == "__main__":
