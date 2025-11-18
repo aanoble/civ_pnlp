@@ -774,7 +774,8 @@ def compare_esigl_dedop(
         pl.col("period").map_elements(
             lambda col: datetime.strptime(f"{col}01", "%Y%m%d").strftime("%B %Y").capitalize(),
             return_dtype=pl.String,
-        )
+        ),
+        pl.col("dx_name").str.replace(r"PNLP-|GTC-", "").str.strip_chars().alias("dx_name"),
     )
 
 
@@ -853,7 +854,10 @@ def evaluate_data_coherence(
         .sort("taux_incoherence", descending=True)
     )
     df_coherence = dhis2.meta.add_org_unit_name_column(df_coherence, "organisation_unit_id")
-    return dhis2.meta.add_dx_name_column(df_coherence, "data_element_id")  # type: ignore
+    df_coherence = dhis2.meta.add_dx_name_column(df_coherence, "data_element_id")
+    return df_coherence.with_columns(
+        pl.col("dx_name").str.replace(r"PNLP-|GTC-", "").str.strip_chars().alias("dx_name"),
+    )  # type: ignore
 
 
 @esigl_vs_dedop_module_3.task
@@ -935,7 +939,10 @@ def evaluate_data_completeness(
     )
 
     df_completude = dhis2.meta.add_org_unit_name_column(df_completude, "organisation_unit_id")
-    return dhis2.meta.add_dx_name_column(df_completude, "data_element_id")  # type: ignore
+    df_completude = dhis2.meta.add_dx_name_column(df_completude, "data_element_id")  # type: ignore
+    return df_completude.with_columns(
+        pl.col("dx_name").str.replace(r"PNLP-|GTC-", "").str.strip_chars().alias("dx_name"),
+    )  # type: ignore
 
 
 @esigl_vs_dedop_module_3.task
