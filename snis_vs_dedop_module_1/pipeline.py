@@ -7,7 +7,7 @@ from typing import Literal
 
 import polars as pl
 import psycopg2
-from constants import DATA_ELEMENTS
+from constants import DATASET_IDS
 from dateutil import rrule
 from dateutil.relativedelta import relativedelta
 from openhexa.sdk import (
@@ -18,7 +18,11 @@ from openhexa.sdk import (
     workspace,
 )
 from openhexa.toolbox.dhis2 import DHIS2
-from openhexa.toolbox.dhis2.dataframe import extract_data_elements, get_organisation_units
+from openhexa.toolbox.dhis2.dataframe import (
+    extract_dataset,
+    get_datasets,
+    get_organisation_units,
+)
 from utils import check_server_health, last_analytics_update, parse_cutoff_date
 
 
@@ -69,8 +73,8 @@ def snis_vs_dedop_module_1(
     months_back: int,
 ) -> None:
     """Main pipeline function for SNIS vs Dedop Module 1 data comparison and analysis."""
-    snis = DHIS2(connection=snis_connection)
-    dedop = DHIS2(connection=dedop_connection)
+    snis = DHIS2(connection=snis_connection, cache_dir=None)
+    dedop = DHIS2(connection=dedop_connection, cache_dir=None)
 
     check_server_health(snis)
     check_server_health(dedop)
@@ -90,16 +94,20 @@ def snis_vs_dedop_module_1(
     # Extraction des unités d'organisation
     df_org_units = fetch_organisation_units(snis, dedop)
 
+    # Extraction des datasets
+    df_datasets = fetch_dataset_metadata(dhis2=dedop)
+
+    # Traitement des périodes
     periods_range = process_periods(
         start_date=start_date, end_date=end_date, months_back=months_back
     )
 
     # Extraction des données DHIS2
     data_snis = fetch_dhis2_data(
-        dhis2=snis, periods_range=periods_range, data_elements=DATA_ELEMENTS, instance="SNIS"
+        dhis2=snis, periods_range=periods_range, dataset_ids=DATASET_IDS, instance="SNIS"
     )
     data_dedop = fetch_dhis2_data(
-        dhis2=dedop, periods_range=periods_range, data_elements=DATA_ELEMENTS, instance="DEDOP"
+        dhis2=dedop, periods_range=periods_range, dataset_ids=DATASET_IDS, instance="DEDOP"
     )
     current_run.log_info("✅ Extraction des données DHIS2 terminée.")
 
@@ -154,6 +162,29 @@ def snis_vs_dedop_module_1(
     export_to_database(
         df_data=df_completude_district, table_name="snis_vs_dedop_data_module_1_completude_district"
     )
+
+
+@snis_vs_dedop_module_1.task
+def fetch_dataset_metadata(dhis2: DHIS2) -> pl.DataFrame:
+    """Fetch metadata for specified datasets from DHIS2.
+
+    Parameters
+    ----------
+    dhis2 : DHIS2
+        The DHIS2 instance to fetch metadata from.
+
+    Returns
+    -------
+    pl.DataFrame
+        A DataFrame containing the metadata for the specified datasets.
+    """
+    current_run.log_info("⏳ Extraction des métadonnées des datasets depuis DHIS2")
+
+    df_datasets = get_datasets(dhis2).rename({"id": "dataset_id", "name": "dataset_name"})
+    df_datasets = df_datasets.select(["dataset_id", "dataset_name"])
+
+    current_run.log_info("✅ Extraction des métadonnées des datasets terminée.")
+    return df_datasets
 
 
 @snis_vs_dedop_module_1.task
@@ -267,7 +298,7 @@ def process_periods(
 def fetch_dhis2_data(
     dhis2: DHIS2,
     periods_range: list[str],
-    data_elements: list[str],
+    dataset_ids: list[str],
     instance: Literal["SNIS", "DEDOP"] = "SNIS",
 ) -> pl.DataFrame:
     """Fetch data from DHIS2 for the specified periods and data elements.
@@ -278,8 +309,8 @@ def fetch_dhis2_data(
         The DHIS2 instance to fetch data from.
     periods_range : list[str]
         The list of periods to fetch data for (format: YYYY-MM).
-    data_elements : list[str]
-        The list of data element IDs to fetch.
+    dataset_ids : list[str]
+        The list of dataset IDs to fetch.
     instance : Literal["SNIS", "DEDOP"]
         The DHIS2 instance type for logging purposes.
 
@@ -293,14 +324,24 @@ def fetch_dhis2_data(
         f"aux périodes: `{', '.join(periods_range)}`..."
     )
     current_run.log_info(msg_info)
+    df_data = pl.DataFrame()
     try:
-        return extract_data_elements(
-            dhis2=dhis2,
-            data_elements=data_elements,
-            org_units=["ZD44Asc0bAk"],
-            include_children=True,
-            periods=periods_range,  # type: ignore
-        )
+        for dataset_id in dataset_ids:
+            current_run.log_info(f"Extraction du dataset ID: {dataset_id}")
+            df_dataset = extract_dataset(
+                dhis2=dhis2,
+                dataset=[dataset_id],
+                org_units=["ZD44Asc0bAk"],
+                include_children=True,
+                periods=periods_range,  # type: ignore
+            )
+
+            df_dataset = df_dataset.with_columns(pl.lit(dataset_id).alias("dataset_id"))
+
+            if not df_dataset.is_empty():
+                df_data = pl.concat([df_data, df_dataset], how="diagonal_relaxed")
+
+        return df_data
     except Exception as e:
         current_run.log_error(f"Erreur lors de l'extraction depuis {dhis2.api.url}: {e}")
         raise
@@ -331,6 +372,7 @@ def compare_snis_dedop(
     df_merged = data_snis.join(
         data_dedop,
         on=[
+            "dataset_id",
             "data_element_id",
             "period",
             "organisation_unit_id",
@@ -415,6 +457,7 @@ def evaluate_data_coherence(dhis2: DHIS2, df_compare: pl.DataFrame) -> pl.DataFr
                 "date_report",
                 "period",
                 "organisation_unit_id",
+                "dataset_id",
                 "data_element_id",
             ]
         )
@@ -438,6 +481,7 @@ def evaluate_data_coherence(dhis2: DHIS2, df_compare: pl.DataFrame) -> pl.DataFr
                 "period",
                 "date_report",
                 "organisation_unit_id",
+                "dataset_id",
                 "data_element_id",
                 "nb_comparables",
                 "nb_coherents",
@@ -477,6 +521,7 @@ def evaluate_data_completude(
         "period",
         # "date_report",
         "organisation_unit_id",
+        "dataset_id",
         "data_element_id",
         "category_option_combo_id",
     ]
@@ -500,7 +545,7 @@ def evaluate_data_completude(
     )
 
     df_completude = (
-        df_completude.group_by(["period", "organisation_unit_id", "data_element_id"])
+        df_completude.group_by(["period", "organisation_unit_id", "dataset_id", "data_element_id"])
         .agg(
             [
                 pl.len().alias("nb_total_valeurs_snis"),
@@ -533,7 +578,7 @@ def evaluate_data_completude(
 
 @snis_vs_dedop_module_1.task
 def process_data_with_org_units(
-    df_data: pl.DataFrame, df_org_units: pl.DataFrame, table_name: str
+    df_data: pl.DataFrame, df_org_units: pl.DataFrame, df_datasets: pl.DataFrame, table_name: str
 ) -> pl.DataFrame:
     """Process data by joining with organisation units and saving to a table.
 
@@ -543,6 +588,8 @@ def process_data_with_org_units(
         The DataFrame to process.
     df_org_units : pl.DataFrame
         The DataFrame containing organisation units.
+    df_datasets : pl.DataFrame
+        The DataFrame containing datasets.
     table_name : str
         The name of the table to save the processed data to.
 
@@ -574,6 +621,12 @@ def process_data_with_org_units(
         .alias("type_ou"),
         pl.col("dx_name").str.replace("SIG -", "").str.strip_chars().alias("dx_name"),
     )
+
+    df_processed = df_processed.join(
+        df_datasets,
+        on="dataset_id",
+    )
+
     if table_name == "snis_vs_dedop_data_module_1":
         df_processed = (
             df_processed.select(
@@ -584,6 +637,7 @@ def process_data_with_org_units(
                     "district",
                     "ou_name",
                     "type_ou",
+                    "dataset_name",
                     "dx_name",
                     "co_name",
                     "value_snis",
@@ -606,6 +660,7 @@ def process_data_with_org_units(
                 "district",
                 "ou_name",
                 "type_ou",
+                "dataset_name",
                 "dx_name",
                 "nb_comparables",
                 "nb_coherents",
@@ -663,6 +718,7 @@ def process_data_with_org_units(
                 "district",
                 "ou_name",
                 "type_ou",
+                "dataset_name",
                 "dx_name",
                 "nb_total_valeurs_snis",
                 "nb_valeurs_importe_ddp",
@@ -687,6 +743,7 @@ def process_data_with_org_units(
                     "date_report",
                     "region",
                     "district",
+                    "dataset_name",
                     "dx_name",
                     "nb_total_valeurs_snis",
                     "nb_valeurs_importe_ddp",
@@ -699,6 +756,7 @@ def process_data_with_org_units(
                     "date_report",
                     "region",
                     "district",
+                    "dataset_name",
                     "dx_name",
                     "coordinates",
                 ]
@@ -771,6 +829,12 @@ def export_to_database(
         """,
         uri=workspace.database_url,
     )["column_name"].to_list()
+
+    selected_columns = (
+        selected_columns + ["dataset_name"]
+        if "dataset_name" in df_data.columns and "dataset_name" not in selected_columns
+        else selected_columns
+    )
 
     df_data[selected_columns].write_database(
         table_name=table_name,

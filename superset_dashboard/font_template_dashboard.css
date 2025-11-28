@@ -348,3 +348,31 @@ div[data-test-chart-name="[esigl vs dedop] Tableau récapitulatif de la complét
 div[data-test-chart-name="[esigl vs dedop] Tableau récapitulatif de la complétude des données"] tbody tr:hover th {
     background-color: #eef3f8;
 }
+
+
+/* Gestion de la table  mappping élément de données et dataset*/
+div[data-test-chart-name="[snis vs dedop] Table DataElement & DataSet"] table thead th{
+  font-family: "Segoe UI", Roboto, Arial, sans-serif;
+  background-color: #dfe8f4;  /* Background color */
+  color: #2b2b2b;  
+  font-weight: 600; /* Text color */
+  /* font-weight: bold;          Emphasized header text */
+  font-size: 13px;            /* Font size */
+  padding: 13px;              /* Space inside each header cell */
+}
+
+div[data-test-chart-name="[snis vs dedop] Table DataElement & DataSet"] tbody td{
+  font-size: 13px;            /* Font size */
+  color: #000000;             /* Font color */
+}
+
+
+div[data-test-chart-name="[snis vs dedop] Table DataElement & DataSet"] tbody tr:nth-child(even) {
+  background-color: #f2f2f2; /* Light grey background for even rows */
+}
+
+/* ===== SURVOL LIGNE ===== */
+div[data-test-chart-name="[snis vs dedop] Table DataElement & DataSet"] tbody tr:hover td,
+div[data-test-chart-name="[snis vs dedop] Table DataElement & DataSet"] tbody tr:hover th {
+    background-color: #eef3f8;
+}
