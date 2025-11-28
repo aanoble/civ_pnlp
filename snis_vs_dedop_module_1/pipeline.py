@@ -532,6 +532,9 @@ def evaluate_data_completude(
         "data_element_id",
         "category_option_combo_id",
     ]
+    data_snis = data_snis.filter(
+        pl.col("data_element_id").is_in(data_dedop["data_element_id"].unique().to_list())
+    )
     df_completude = (
         data_snis.select(selected_cols)
         .unique()
