@@ -122,19 +122,24 @@ def snis_vs_dedop_module_1(
 
     # Standardisation des données ajout des informations d'unité d'organisation
     df_compare = process_data_with_org_units(
-        df_data=df_compare, df_org_units=df_org_units, table_name="snis_vs_dedop_data_module_1"
+        df_data=df_compare,
+        df_org_units=df_org_units,
+        df_datasets=df_datasets,
+        table_name="snis_vs_dedop_data_module_1",
     )
 
     # Cohérence avec tracabilité
     df_coherence_tracabilite = process_data_with_org_units(
         df_data=df_coherence,
         df_org_units=df_org_units,
+        df_datasets=df_datasets,
         table_name="snis_vs_dedop_data_module_1_coherence_tracabilite",
     )
 
     df_coherence = process_data_with_org_units(
         df_data=df_coherence,
         df_org_units=df_org_units,
+        df_datasets=df_datasets,
         table_name="snis_vs_dedop_data_module_1_coherence",
     )
 
@@ -142,12 +147,14 @@ def snis_vs_dedop_module_1(
     df_completude_district = process_data_with_org_units(
         df_data=df_completude,
         df_org_units=df_org_units,
+        df_datasets=df_datasets,
         table_name="snis_vs_dedop_data_module_1_completude_district",
     )
 
     df_completude = process_data_with_org_units(
         df_data=df_completude,
         df_org_units=df_org_units,
+        df_datasets=df_datasets,
         table_name="snis_vs_dedop_data_module_1_completude",
     )
 
