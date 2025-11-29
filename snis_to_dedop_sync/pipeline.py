@@ -193,6 +193,7 @@ def snis_to_dedop_sync(
         summary = push_data_to_dhis2(
             dhis2=dedop,
             payload=payload,
+            dataset_id=dataset_id,
             dry_run=dry_run,
             import_mode=import_mode,
             post_batch_size=post_batch_size,
@@ -524,6 +525,7 @@ def prepare_data_for_dhis2(df: pl.DataFrame, dhis2_aoc: str) -> list[dict]:
 def push_data_to_dhis2(
     dhis2: DHIS2,
     payload: list[dict],
+    dataset_id: str,
     dry_run: bool,
     import_mode: str = "CREATE_AND_UPDATE",
     post_batch_size: int = 5000,
@@ -533,6 +535,7 @@ def push_data_to_dhis2(
     Args:
         dhis2: Client DHIS2 configuré
         payload: Données à importer
+        dataset_id: Identifiant du dataset DHIS2
         dry_run: Mode test sans écriture
         import_mode: Stratégie d'import DHIS2 (CREATE, UPDATE, CREATE_AND_UPDATE)
         post_batch_size: Taille des lots pour les requêtes POST DHIS2
@@ -569,7 +572,7 @@ def push_data_to_dhis2(
         response = None
         for attempt in range(1, max_retries + 1):
             response = dhis2.api.session.post(
-                url=url, json={"dataValues": chunk}, params=request_params
+                url=url, json={"dataSet": dataset_id, "dataValues": chunk}, params=request_params
             )
             status = response.status_code
             if status == 200:

@@ -375,7 +375,9 @@ def compare_snis_dedop(
         A DataFrame highlighting discrepancies between SNIS and Dedop data.
     """
     current_run.log_info("Comparaison des données SNIS et DEDOP pour cohérence")
-
+    data_snis = data_snis.filter(
+        pl.col("data_element_id").is_in(data_dedop["data_element_id"].unique().to_list())
+    )
     df_merged = data_snis.join(
         data_dedop,
         on=[
