@@ -109,6 +109,14 @@ from utils import check_server_health, last_analytics_update, parse_cutoff_date,
     default=False,
     required=False,
 )
+@parameter(
+    "automate_sync",
+    type=bool,  # type: ignore
+    name="Automate synchronization by last updated date",
+    help="Whether to automate the synchronization process",
+    default=False,
+    required=False,
+)
 def snis_to_dedop_sync(
     snis_connection: DHIS2Connection,
     dedop_connection: DHIS2Connection,
@@ -120,6 +128,7 @@ def snis_to_dedop_sync(
     last_updated: str | None,
     output_directory: str,
     dhis2_aoc: str,
+    automate_sync: bool,
     dry_run: bool = False,
     use_cache: bool = True,
     import_mode: str = "CREATE_AND_UPDATE",
@@ -186,6 +195,7 @@ def snis_to_dedop_sync(
             org_unit_ids=org_unit_ids,
             periods_range=periods_range,
             last_updated=last_updated,
+            automate_sync=automate_sync,
         )
 
         payload = prepare_data_for_dhis2(df=data_snis, dhis2_aoc=dhis2_aoc)
@@ -345,6 +355,7 @@ def fetch_dhis2_data(
     org_unit_ids: list[str] | None,
     periods_range: list[datetime],
     last_updated: str | None,
+    automate_sync: bool,
 ) -> pl.DataFrame:
     """Fetch data from DHIS2 for given dataset, org unit, periods, and last updated filter.
 
@@ -362,6 +373,8 @@ def fetch_dhis2_data(
         List of periods (as datetime objects) to fetch data for.
     last_updated : str | None
         Only return records updated since this ISO date (YYYY-MM-DD), if provided.
+    automate_sync : bool
+        Whether to automate the synchronization process.
 
     Returns
     -------
@@ -424,15 +437,28 @@ def fetch_dhis2_data(
             f"pour les périodes `{periods_range[0].strftime('%Y-%m-%d')}`"
             f" - `{periods_range[-1].strftime('%Y-%m-%d')}`"
         )
-        data = dataframe.extract_dataset(
-            snis,
-            dataset=[dataset_id],
-            org_units=["ZD44Asc0bAk"],
-            start_date=periods_range[0],
-            end_date=periods_range[-1],
-            last_updated=last_updated,
-            include_children=True,
-        )
+        if not automate_sync:
+            data = dataframe.extract_dataset(
+                snis,
+                dataset=[dataset_id],
+                org_units=["ZD44Asc0bAk"],
+                start_date=periods_range[0],
+                end_date=periods_range[-1],
+                last_updated=last_updated,
+                include_children=True,
+            )
+        else:
+            data_values = snis.api.get(
+                endpoint="dataValueSets",
+                params={
+                    "dataSet": dataset_id,
+                    "orgUnit": "ZD44Asc0bAk",
+                    "children": True,
+                    "lastUpdated": datetime.now().strftime("%Y-%m-%d"),
+                },
+            )
+            data = dataframe._data_values_to_dataframe(data_values.get("dataValues", []))
+
         data = (
             data.filter(pl.col("organisation_unit_id").is_in(org_unit_ids))
             if org_unit_ids
