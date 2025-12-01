@@ -448,13 +448,18 @@ def fetch_dhis2_data(
                 include_children=True,
             )
         else:
+            last_updated = datetime.now().strftime("%Y-%m-%d")
+            current_run.log_info(
+                f"Extraction des données en mode automatisé avec "
+                f"la date de dernière mise à jour: {last_updated}"
+            )
             data_values = snis.api.get(
                 endpoint="dataValueSets",
                 params={
                     "dataSet": dataset_id,
                     "orgUnit": "ZD44Asc0bAk",
                     "children": True,
-                    "lastUpdated": datetime.now().strftime("%Y-%m-%d"),
+                    "lastUpdated": last_updated,
                 },
             )
             data = dataframe._data_values_to_dataframe(data_values.get("dataValues", []))
