@@ -36,7 +36,7 @@ EXTENDED_PRODUCT_CODE = {
     type=DHIS2Connection,  # type: ignore
     name="Target DHIS2 instance",
     help="Target DHIS2 instance",
-    default="dhis2-nmdr",
+    default="dhis2-nmdr-temp",
     required=True,
 )
 @parameter(

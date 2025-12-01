@@ -21,7 +21,7 @@ from openhexa.toolbox.dhis2 import DHIS2, dataframe
 from utils import check_server_health, last_analytics_update, parse_cutoff_date, validate_dataset
 
 
-@pipeline("snis_to_dedop_sync")
+@pipeline("snis_to_dedop_sync", timeout=43200)
 @parameter(
     "snis_connection",
     type=DHIS2Connection,  # type: ignore
