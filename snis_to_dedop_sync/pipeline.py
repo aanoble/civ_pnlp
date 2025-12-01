@@ -718,7 +718,7 @@ def write_import_report(output_dir: Path, payload: list[dict], summary: dict) ->
 
 
 @snis_to_dedop_sync.task
-def cleanup_old_directory_files(output_dir: Path, _write: None, retention_days: int = 2) -> None:
+def cleanup_old_directory_files(output_dir: Path, _write: None, retention_days: int = 1) -> None:
     """Supprime les anciens fichiers de rapport.
 
     Pour avoir une chronologie des exécutions des tâches les deux paramètres
