@@ -28,7 +28,7 @@ jobs:
       - name: Push pipeline to OpenHEXA
         run: |
           openhexa pipelines push snis_to_dedop_sync \
-            --code "snis_to_dedop_sync" \
+            --code "snis-to-dedop-sync" \
             --description "${{ github.event.head_commit.message }}" \
             --link "https://github.com/aanoble/civ_pnlp/commit/${{ github.sha }}" \
             --yes
