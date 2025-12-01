@@ -112,8 +112,8 @@ from utils import check_server_health, last_analytics_update, parse_cutoff_date,
 @parameter(
     "automate_sync",
     type=bool,  # type: ignore
-    name="Automate synchronization by last updated date",
-    help="Whether to automate the synchronization process",
+    name="Automate synchronization",
+    help="Whether to automate the synchronization process using last updated filter",
     default=False,
     required=False,
 )

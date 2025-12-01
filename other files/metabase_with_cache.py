@@ -40,8 +40,8 @@ class SQLiteCache:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute(
                 """
-            SELECT timestamp, data, ttl 
-            FROM cache 
+            SELECT timestamp, data, ttl
+            FROM cache
             WHERE key = ?
             """,
                 (key,),
@@ -99,7 +99,7 @@ class SQLiteCache:
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
                 """
-            DELETE FROM cache 
+            DELETE FROM cache
             WHERE ? - timestamp > ttl
             """,
                 (current_time,),
@@ -191,7 +191,8 @@ class Metabase:
             names = None
 
             while True:
-                df, names = self._fetch_chunk(sql_query, database_id, chunk_size, offset, names)
+                df, names = self._fetch_chunk(
+                    sql_query, database_id, chunk_size, offset, names)
                 if df.empty:
                     break
                 data_frames.append(df)
@@ -199,7 +200,8 @@ class Metabase:
                 if len(df) < chunk_size:
                     break
 
-            result_df = pd.concat(data_frames, ignore_index=True) if data_frames else pd.DataFrame()
+            result_df = pd.concat(
+                data_frames, ignore_index=True) if data_frames else pd.DataFrame()
 
             # Mise en cache
             if use_cache:
@@ -209,7 +211,8 @@ class Metabase:
             return result_df
 
         except Exception as e:
-            raise ValueError(f"Erreur lors de la récupération des données: {e}") from e
+            raise ValueError(
+                f"Erreur lors de la récupération des données: {e}") from e
 
     def clear_cache(self):
         """Vide complètement le cache."""
@@ -242,7 +245,8 @@ class Metabase:
                 sql_query += "\nOFFSET {offset}"
 
         if not all(param in sql_query for param in required_params):
-            raise ValueError("La requête SQL doit contenir les paramètres {limit} et {offset}")
+            raise ValueError(
+                "La requête SQL doit contenir les paramètres {limit} et {offset}")
 
         return sql_query
 
@@ -253,7 +257,8 @@ class Metabase:
         try:
             response = self.api.session.post(
                 f"{self.api.url}/dataset",
-                headers={"Content-Type": "application/json", "X-Metabase-Session": self.api.token},
+                headers={"Content-Type": "application/json",
+                         "X-Metabase-Session": self.api.token},
                 json={
                     "database": database_id,
                     "type": "native",
@@ -266,7 +271,8 @@ class Metabase:
 
             # Extraction des noms de colonnes
             if names is None:
-                names = [col["display_name"] for col in data["results_metadata"]["columns"]]
+                names = [col["display_name"]
+                         for col in data["results_metadata"]["columns"]]
 
             df = pd.DataFrame(data["rows"])
             if not df.empty:
@@ -302,16 +308,17 @@ class Api:
 
     def __init__(self, connection: CustomConnection):
         self._validate_connection(connection)
-        self.url = self.parse_url(connection.url) # type: ignore
+        self.url = self.parse_url(connection.url)  # type: ignore
         self.token = None
-        self.session = self.authenticate(connection.username, connection.password) # type: ignore
+        self.session = self.authenticate(
+            connection.username, connection.password)  # type: ignore
 
     @staticmethod
     def _validate_connection(connection: CustomConnection):
         """Valide les paramètres de connexion."""
         if not connection:
             raise MetabaseError("Connexion requise")
-        if not all([connection.url, connection.username, connection.password]): # type: ignore
+        if not all([connection.url, connection.username, connection.password]):  # type: ignore
             raise MetabaseError("URL, utilisateur et mot de passe requis")
 
     @staticmethod
@@ -339,11 +346,12 @@ class Api:
             return session
         except requests.exceptions.RequestException as e:
             raise MetabaseError(f"Erreur réseau: {e}") from e
-        except requests.JSONDecodeError as e: # type: ignore
+        except requests.JSONDecodeError as e:  # type: ignore
             raise MetabaseError("Réponse d'authentification invalide") from e
         except KeyError as e:
-            raise MetabaseError("Structure de réponse d'authentification invalide") from e
-        
+            raise MetabaseError(
+                "Structure de réponse d'authentification invalide") from e
+
     def ping(self):
         """Vérifie la connectivité avec le serveur Metabase."""
         try:
@@ -356,4 +364,3 @@ class Api:
                 raise MetabaseError("Serveur Metabase inaccessible")
         except requests.RequestException as e:
             raise MetabaseError(f"Erreur de connectivité Metabase: {e}") from e
-

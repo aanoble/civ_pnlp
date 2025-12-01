@@ -625,7 +625,8 @@ def fetch_metabase_gtc_data(
 
     msg_info = (
         "⏳ Extraction des données GTC depuis Metabase "
-        f"aux périodes: `{start_dt.strftime('%Y-%m-%d')} - {end_dt.strftime('%Y-%m-%d')}`..."  # type: ignore
+        # type: ignore
+        f"aux périodes: `{start_dt.strftime('%Y-%m-%d')} - {end_dt.strftime('%Y-%m-%d')}`..."
     )
     current_run.log_info(msg_info)
 
@@ -856,7 +857,8 @@ def evaluate_data_coherence(
         .sort("taux_incoherence", descending=True)
     )
     df_coherence = dhis2.meta.add_org_unit_name_column(df_coherence, "organisation_unit_id")
-    return dhis2.meta.add_dx_name_column(df_coherence, "data_element_id")  # type: ignore
+    # type: ignore
+    return dhis2.meta.add_dx_name_column(df_coherence, "data_element_id")
 
 
 # .with_columns(
@@ -943,7 +945,8 @@ def evaluate_data_completeness(
     )
 
     df_completude = dhis2.meta.add_org_unit_name_column(df_completude, "organisation_unit_id")
-    return dhis2.meta.add_dx_name_column(df_completude, "data_element_id")  # type: ignore
+    # type: ignore
+    return dhis2.meta.add_dx_name_column(df_completude, "data_element_id")
 
 
 # .with_columns(

@@ -9,12 +9,12 @@ SELECT DISTINCT
     requisition_line_items.quantityreceived AS Quantite_recue, -- VpsWXngJn8m : SIGL-Quantité disponible et utilisable en début mois
     requisition_line_items.quantitydispensed AS Quantite_distribuee, -- r4Y2vAZNFJr : SIGL-Quantité consommée au cours du  mois
     requisition_line_items.totallossesandadjustments AS Perte_ajustement, -- DaYWwwQWpzO : SIGL-Pertes et ajustements au cours du  mois
-    requisition_line_items.stockinhand AS SDU, -- MsVzBFeQy98 : SIGL-Stock Disponible et Utilisatble 
+    requisition_line_items.stockinhand AS SDU, -- MsVzBFeQy98 : SIGL-Stock Disponible et Utilisatble
     requisition_line_items.amc AS cmm, -- tAviNwTJA69 : SIGL-Consommation Moyenne Mensuel
     requisition_line_items.stockoutdays AS NbreJrsRupture, -- lmIvSiYc80L : SIGL-Nbre de jours de rupture de stock au cours du  mois
     requisition_line_items.calculatedorderquantity AS Quantite_proposee, -- cpDZa6GSME2 : SIGL-Quantité suggérée
     requisition_line_items.quantityrequested AS Quantite_commandee, -- qz4cXueOt5p : SIGL-Quantité commander
-    requisition_line_items.quantityapproved AS Quantite_approuvee -- TnEwztOelac : SIGL-Quantité approuvée 
+    requisition_line_items.quantityapproved AS Quantite_approuvee -- TnEwztOelac : SIGL-Quantité approuvée
 FROM requisition_line_items
 JOIN requisitions ON requisition_line_items.rnrid = requisitions.id
 JOIN products ON requisition_line_items.productcode::text = products.code::text
@@ -49,39 +49,39 @@ SELECT
     SUM(requisition_line_items.quantityreceived) AS Quantite_recue, -- VpsWXngJn8m : SIGL-Quantité disponible et utilisable en début mois
     SUM(requisition_line_items.quantitydispensed) AS Quantite_distribuee, -- r4Y2vAZNFJr : SIGL-Quantité consommée au cours du  mois
     SUM(requisition_line_items.totallossesandadjustments) AS Perte_ajustement, -- DaYWwwQWpzO : SIGL-Pertes et ajustements au cours du  mois
-    SUM(requisition_line_items.stockinhand) AS SDU, -- MsVzBFeQy98 : SIGL-Stock Disponible et Utilisatble 
+    SUM(requisition_line_items.stockinhand) AS SDU, -- MsVzBFeQy98 : SIGL-Stock Disponible et Utilisatble
     SUM(requisition_line_items.amc) AS cmm, -- tAviNwTJA69 : SIGL-Consommation Moyenne Mensuel
     SUM(requisition_line_items.stockoutdays) AS NbreJrsRupture, -- lmIvSiYc80L : SIGL-Nbre de jours de rupture de stock au cours du  mois
     SUM(requisition_line_items.calculatedorderquantity) AS Quantite_proposee, -- cpDZa6GSME2 : SIGL-Quantité suggérée
     SUM(requisition_line_items.quantityrequested) AS Quantite_commandee, -- qz4cXueOt5p : SIGL-Quantité commander
-    SUM(requisition_line_items.quantityapproved) AS Quantite_approuvee -- TnEwztOelac : SIGL-Quantité approuvée 
+    SUM(requisition_line_items.quantityapproved) AS Quantite_approuvee -- TnEwztOelac : SIGL-Quantité approuvée
 FROM requisition_line_items
-JOIN requisitions 
+JOIN requisitions
     ON requisition_line_items.rnrid = requisitions.id
     AND requisitions.status NOT IN ('INITIATED', 'SUBMITTED')
     AND requisitions.emergency = FALSE
     AND requisitions.programid = '23'
-JOIN processing_periods 
+JOIN processing_periods
     ON requisitions.periodid = processing_periods.id
     AND {processing_periods}
-JOIN programs 
+JOIN programs
     ON requisitions.programid = programs.id
-JOIN products 
+JOIN products
     ON requisition_line_items.productcode = products.code
     AND requisition_line_items.productcode IN {products_code}
-JOIN facilities 
+JOIN facilities
     ON requisitions.facilityid = facilities.id
-JOIN geographic_zones 
+JOIN geographic_zones
     ON facilities.geographiczoneid = geographic_zones.id
 WHERE
     requisition_line_items.skipped = FALSE
     AND requisition_line_items.fullsupply = TRUE
-GROUP BY 
-    programs.name, 
-    processing_periods.startdate, 
-    geographic_zones.name, 
+GROUP BY
+    programs.name,
+    processing_periods.startdate,
+    geographic_zones.name,
     requisition_line_items.productcode
-ORDER BY 
+ORDER BY
     processing_periods.startdate DESC
 """  # noqa: E501
 

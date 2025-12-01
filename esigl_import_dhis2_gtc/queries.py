@@ -40,20 +40,20 @@ WITH tb_gtc AS (
         AND rli.fullsupply = TRUE
 ),
 latest_records AS (
-    SELECT 
-        code_site, 
-        code_produit, 
+    SELECT
+        code_site,
+        code_produit,
         MAX(startdate) AS max_date
     FROM tb_gtc
     GROUP BY code_site, code_produit
 )
-SELECT 
+SELECT
     tgtc.*,
     lr.max_date
 FROM tb_gtc tgtc
-INNER JOIN latest_records lr 
-    ON tgtc.code_site = lr.code_site 
-    AND tgtc.code_produit = lr.code_produit 
+INNER JOIN latest_records lr
+    ON tgtc.code_site = lr.code_site
+    AND tgtc.code_produit = lr.code_produit
     AND tgtc.startdate = lr.max_date
 ORDER BY tgtc.code_site, tgtc.code_produit
 """

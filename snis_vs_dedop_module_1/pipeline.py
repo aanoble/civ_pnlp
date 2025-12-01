@@ -502,6 +502,7 @@ def evaluate_data_coherence(dhis2: DHIS2, df_compare: pl.DataFrame) -> pl.DataFr
         .sort("taux_incoherence", descending=True)
     )
     df_coherence = dhis2.meta.add_org_unit_name_column(df_coherence, "organisation_unit_id")
+
     return dhis2.meta.add_dx_name_column(df_coherence, "data_element_id")  # type: ignore
 
 
@@ -585,6 +586,7 @@ def evaluate_data_completude(
     )
 
     df_completude = dhis2.meta.add_org_unit_name_column(df_completude, "organisation_unit_id")
+
     return dhis2.meta.add_dx_name_column(df_completude, "data_element_id")  # type: ignore
 
 

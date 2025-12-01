@@ -35,7 +35,8 @@ class ExcelToJsonConverter:  # noqa: D101
     def setup_ui(self):  # noqa: D102
         # Frame principal
         main_frame = ttk.Frame(self.root, padding="10")
-        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))  # type: ignore
+        main_frame.grid(row=0, column=0, sticky=(
+            tk.W, tk.E, tk.N, tk.S))  # type: ignore
 
         # Configuration du grid
         self.root.columnconfigure(0, weight=1)
@@ -78,7 +79,8 @@ class ExcelToJsonConverter:  # noqa: D101
         info_frame = ttk.LabelFrame(
             main_frame, text="Colonnes requises dans le fichier Excel", padding="10"
         )
-        info_frame.grid(row=5, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(20, 10))
+        info_frame.grid(row=5, column=0, columnspan=3,
+                        sticky=(tk.W, tk.E), pady=(20, 10))
         info_frame.columnconfigure(0, weight=1)
 
         # Liste des colonnes attendues
@@ -101,13 +103,15 @@ sdu, cmm, nbrejrsrupture, quantite_proposee, quantite_commandee, quantite_approu
 
         # Zone de log
         log_frame = ttk.LabelFrame(main_frame, text="Journal", padding="5")
-        log_frame.grid(row=7, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(10, 0))
+        log_frame.grid(row=7, column=0, columnspan=3, sticky=(
+            tk.W, tk.E, tk.N, tk.S), pady=(10, 0))
         log_frame.columnconfigure(0, weight=1)
         log_frame.rowconfigure(0, weight=1)
         main_frame.rowconfigure(7, weight=1)
 
         self.log_text = tk.Text(log_frame, height=8, wrap=tk.WORD)
-        scrollbar = ttk.Scrollbar(log_frame, orient=tk.VERTICAL, command=self.log_text.yview)
+        scrollbar = ttk.Scrollbar(
+            log_frame, orient=tk.VERTICAL, command=self.log_text.yview)
         self.log_text.configure(yscrollcommand=scrollbar.set)
 
         self.log_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
@@ -123,7 +127,8 @@ sdu, cmm, nbrejrsrupture, quantite_proposee, quantite_commandee, quantite_approu
         """Ouvre le dialogue pour sélectionner le fichier Excel."""
         file_path = filedialog.askopenfilename(
             title="Sélectionner le fichier Excel",
-            filetypes=[("Fichiers Excel", "*.xlsx *.xls"), ("Tous les fichiers", "*.*")],
+            filetypes=[("Fichiers Excel", "*.xlsx *.xls"),
+                       ("Tous les fichiers", "*.*")],
         )
         if file_path:
             self.excel_file_path.set(file_path)
@@ -131,7 +136,8 @@ sdu, cmm, nbrejrsrupture, quantite_proposee, quantite_commandee, quantite_approu
 
     def browse_output_folder(self):
         """Ouvre le dialogue pour sélectionner le dossier de sortie."""
-        folder_path = filedialog.askdirectory(title="Sélectionner le dossier de sortie")
+        folder_path = filedialog.askdirectory(
+            title="Sélectionner le dossier de sortie")
         if folder_path:
             self.output_folder_path.set(folder_path)
             self.log_message(f"📁 Dossier de sortie: {folder_path}")
@@ -141,11 +147,13 @@ sdu, cmm, nbrejrsrupture, quantite_proposee, quantite_commandee, quantite_approu
         try:
             # Vérifications
             if not self.excel_file_path.get():
-                messagebox.showerror("Erreur", "Veuillez sélectionner un fichier Excel")
+                messagebox.showerror(
+                    "Erreur", "Veuillez sélectionner un fichier Excel")
                 return
 
             if not self.output_folder_path.get():
-                messagebox.showerror("Erreur", "Veuillez sélectionner un dossier de sortie")
+                messagebox.showerror(
+                    "Erreur", "Veuillez sélectionner un dossier de sortie")
                 return
 
             excel_path = Path(self.excel_file_path.get())
@@ -166,7 +174,8 @@ sdu, cmm, nbrejrsrupture, quantite_proposee, quantite_commandee, quantite_approu
             required_columns = ["dataElement", "orgUnit", "period"] + list(
                 self.mapping_coc.values()
             )
-            missing_columns = [col for col in required_columns if col not in df_etat_stock.columns]
+            missing_columns = [
+                col for col in required_columns if col not in df_etat_stock.columns]
 
             if missing_columns:
                 error_msg = f"Colonnes manquantes: {', '.join(missing_columns)}"
@@ -205,21 +214,24 @@ sdu, cmm, nbrejrsrupture, quantite_proposee, quantite_commandee, quantite_approu
             self.log_message(f"📊 Total des enregistrements: {total}")
 
             for i in range(num_chunks):
-                chunk = payload[i * chunk_size : (i + 1) * chunk_size]
+                chunk = payload[i * chunk_size: (i + 1) * chunk_size]
                 chunk_payload = {"dataValues": chunk}
                 chunk_file = output_folder / f"payload_chunk_{i + 1:03}.json"
 
                 self.log_message(f"💾 Sauvegarde vers: {chunk_file.as_posix()}")
 
                 with open(chunk_file, "w", encoding="utf-8") as f_out:
-                    json.dump(chunk_payload, f_out, indent=2, ensure_ascii=False)
+                    json.dump(chunk_payload, f_out,
+                              indent=2, ensure_ascii=False)
 
-                self.log_message(f"✅ Fichier {chunk_file.name} créé avec {len(chunk)} éléments")
+                self.log_message(
+                    f"✅ Fichier {chunk_file.name} créé avec {len(chunk)} éléments")
 
             # with open(output_file, "w", encoding="utf-8") as f:
             #    json.dump(output_data, f, indent=2, ensure_ascii=False)
 
-            self.log_message(f"✅ Conversion terminée! {len(payload)} enregistrements créés")
+            self.log_message(
+                f"✅ Conversion terminée! {len(payload)} enregistrements créés")
             # self.log_message(f"📄 Fichier sauvegardé: {output_file}")
             # f"Fichier: {output_file}",
             messagebox.showinfo(

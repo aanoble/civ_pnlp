@@ -60,8 +60,8 @@ ignore = [
     "SIM108", # Use ternary operators
     "SIM102", # Use a single if statement instead of nested if statements
     "SIM114", # Combine `if` branches
-    "DOC501", # Raised exception {id} missing from docstring	
-    "DOC502", # Raised exception is not explicitly raised: {id}	
+    "DOC501", # Raised exception {id} missing from docstring
+    "DOC502", # Raised exception is not explicitly raised: {id}
     "RUF022", # `__all__` is not sorted
     "RUF005", # Consider expression instead of concatenation
     "PD901", # Avoid using the generic variable name df for dataframes

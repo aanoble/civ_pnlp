@@ -9,12 +9,12 @@ SELECT DISTINCT
     requisition_line_items.quantityreceived AS Quantite_recue, -- VpsWXngJn8m : SIGL-Quantité disponible et utilisable en début mois
     requisition_line_items.quantitydispensed AS Quantite_distribuee, -- r4Y2vAZNFJr : SIGL-Quantité consommée au cours du  mois
     requisition_line_items.totallossesandadjustments AS Perte_ajustement, -- DaYWwwQWpzO : SIGL-Pertes et ajustements au cours du  mois
-    requisition_line_items.stockinhand AS SDU, -- MsVzBFeQy98 : SIGL-Stock Disponible et Utilisatble 
+    requisition_line_items.stockinhand AS SDU, -- MsVzBFeQy98 : SIGL-Stock Disponible et Utilisatble
     requisition_line_items.amc AS cmm, -- tAviNwTJA69 : SIGL-Consommation Moyenne Mensuel
     requisition_line_items.stockoutdays AS NbreJrsRupture, -- lmIvSiYc80L : SIGL-Nbre de jours de rupture de stock au cours du  mois
     requisition_line_items.calculatedorderquantity AS Quantite_proposee, -- cpDZa6GSME2 : SIGL-Quantité suggérée
     requisition_line_items.quantityrequested AS Quantite_commandee, -- qz4cXueOt5p : SIGL-Quantité commander
-    requisition_line_items.quantityapproved AS Quantite_approuvee -- TnEwztOelac : SIGL-Quantité approuvée 
+    requisition_line_items.quantityapproved AS Quantite_approuvee -- TnEwztOelac : SIGL-Quantité approuvée
 FROM requisition_line_items
 JOIN requisitions ON requisition_line_items.rnrid = requisitions.id
 JOIN products ON requisition_line_items.productcode::text = products.code::text
@@ -79,20 +79,20 @@ WITH tb_gtc AS (
         AND rli.fullsupply = TRUE
 ),
 latest_records AS (
-    SELECT 
-        code_site, 
-        code_produit, 
+    SELECT
+        code_site,
+        code_produit,
         MAX(startdate) AS max_date
     FROM tb_gtc
     GROUP BY code_site, code_produit
 )
-SELECT 
+SELECT
     tgtc.*,
     lr.max_date
 FROM tb_gtc tgtc
-INNER JOIN latest_records lr 
-    ON tgtc.code_site = lr.code_site 
-    AND tgtc.code_produit = lr.code_produit 
+INNER JOIN latest_records lr
+    ON tgtc.code_site = lr.code_site
+    AND tgtc.code_produit = lr.code_produit
     AND tgtc.startdate = lr.max_date
 ORDER BY tgtc.code_site, tgtc.code_produit
 """

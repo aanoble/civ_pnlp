@@ -189,7 +189,7 @@ div[data-test-chart-name="[snis vs dedop] Nombre de valeurs attendues SNIS"] .he
 div[data-test-chart-name="[snis vs dedop] Tableau récapitulatif de la complétude des données"] table thead th{
   font-family: "Segoe UI", Roboto, Arial, sans-serif;
   background-color: #dfe8f4;  /* Background color */
-  color: #2b2b2b;  
+  color: #2b2b2b;
   font-weight: 600; /* Text color */
   /* font-weight: bold;          Emphasized header text */
   font-size: 13px;            /* Font size */
@@ -326,7 +326,7 @@ div[data-test-chart-name="[esigl vs dedop] Nombre de valeurs attendues eSIGL"] .
 div[data-test-chart-name="[esigl vs dedop] Tableau récapitulatif de la complétude des données"] table thead th{
   font-family: "Segoe UI", Roboto, Arial, sans-serif;
   background-color: #dfe8f4;  /* Background color */
-  color: #2b2b2b;  
+  color: #2b2b2b;
   font-weight: 600; /* Text color */
   /* font-weight: bold;          Emphasized header text */
   font-size: 13px;            /* Font size */
@@ -354,7 +354,7 @@ div[data-test-chart-name="[esigl vs dedop] Tableau récapitulatif de la complét
 div[data-test-chart-name="[snis vs dedop] Table DataElement & DataSet"] table thead th{
   font-family: "Segoe UI", Roboto, Arial, sans-serif;
   background-color: #dfe8f4;  /* Background color */
-  color: #2b2b2b;  
+  color: #2b2b2b;
   font-weight: 600; /* Text color */
   /* font-weight: bold;          Emphasized header text */
   font-size: 13px;            /* Font size */
