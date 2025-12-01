@@ -848,11 +848,28 @@ def export_to_database(
         else selected_columns
     )
 
-    df_data[selected_columns].write_database(
-        table_name=table_name,
-        connection=workspace.database_url,
-        if_table_exists=mode,
-    )  # type: ignore
+    # df_data[selected_columns].write_database(
+    #     table_name=table_name,
+    #     connection=workspace.database_url,
+    #     if_table_exists=mode,
+    # )  # type: ignore
+    # Writing data to database by batch_size
+    df_data = df_data[selected_columns]
+    batch_size = 100_000
+    offset = 0
+    while True:
+        batch = df_data.slice(offset, batch_size)
+        if batch.height == 0:
+            break
+
+        batch.write_database(
+            table_name=table_name,
+            connection=workspace.database_url,
+            if_table_exists=mode,
+        )
+
+        offset += batch_size
+
     current_run.add_database_output(table_name)
 
 
