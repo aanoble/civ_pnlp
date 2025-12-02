@@ -184,7 +184,7 @@ def snis_to_dedop_sync(
             continue
 
         if not org_unit_ids:
-            org_unit_ids = sync_missing_orgunits(
+            org_unit_ids = sync_dataset_orgunits(
                 snis=snis, dedop=dedop, dataset_id=dataset_id, org_unit_ids=org_unit_ids
             )
 
@@ -276,10 +276,10 @@ def process_periods(
 
 
 @snis_to_dedop_sync.task
-def sync_missing_orgunits(
+def sync_dataset_orgunits(
     snis: DHIS2, dedop: DHIS2, dataset_id: str, org_unit_ids: list[str] | None
 ) -> list[str]:
-    """Synchronize missing organisation units from SNIS to Dedop for a given dataset.
+    """Synchronize (add/remove) organisation units for a dataset between SNIS and Dedop.
 
     Parameters.
     ----------
@@ -309,6 +309,7 @@ def sync_missing_orgunits(
     )
     existing_ids_dedop = {ou["id"] for ou in dataset_units_dedop.get("organisationUnits", [])}
 
+    # Compute delta sets
     to_add = (
         existing_ids_snis - existing_ids_dedop
         if org_unit_ids is None
@@ -348,37 +349,46 @@ def sync_missing_orgunits(
                         f"Exception lors de la suppression de l'orgUnit {ou} de '{endpoint}': {e!s}"
                     )
 
-    if not to_add:
-        current_run.log_info(f"Aucun orgunit manquant à synchroniser pour le dataset {dataset_id}")
-        return list(existing_ids_dedop)
+    # Batch add missing org units in a single PATCH where possible
+    if to_add:
+        try:
+            payload = {"organisationUnits": [{"id": ou} for ou in sorted(to_add)]}
+            res = dedop.api.session.patch(
+                url=f"{dedop.api.url}/dataSets/{dataset_id}", json=payload
+            )
+            status = getattr(res, "status_code", None)
+            if status in (200, 201):
+                current_run.log_info(
+                    f"Ajout en lot de {len(to_add)} orgUnits au DataSet {dataset_id} "
+                    f"(status={status})."
+                )
+                existing_ids_dedop.update(to_add)
+            else:
+                body = getattr(res, "text", "")
+                current_run.log_warning(
+                    f"PATCH en lot échoué (status={status}). \nTentative d'ajout unitaire."
+                )
+                # Fallback to individual POSTs if bulk fails
+                for ou in sorted(to_add):
+                    endpoint = f"dataSets/{dataset_id}/organisationUnits/{ou}"
+                    try:
+                        res_i = dedop.api.post(endpoint=endpoint)
+                        status_i = getattr(res_i, "status_code", None)
+                        if status_i in (200, 201):
+                            existing_ids_dedop.add(ou)
+                        elif status_i == 409:
+                            existing_ids_dedop.add(ou)
+                        else:
+                            current_run.log_error(f"Échec ajout orgUnit {ou} (status={status_i}).")
+                    except Exception as e:
+                        current_run.log_error(f"Exception lors de l'ajout de l'orgUnit {ou}: {e!s}")
+        except Exception as e:
+            current_run.log_error(
+                f"Exception lors du PATCH en lot des orgUnits pour le DataSet {dataset_id}: {e!s}"
+            )
 
-    # Add each missing org unit to Dataset
-    output_orgunits = []
-    for ou in sorted(to_add):
-        for endpoint in (f"dataSets/{dataset_id}/organisationUnits/{ou}",):
-            try:
-                res = dedop.api.post(endpoint=endpoint)
-                status = getattr(res, "status_code", None)
-                if status in (200, 201):
-                    current_run.log_info(
-                        f"Ajout de l'orgUnit {ou} au DataSet {dataset_id} (status={status})."
-                    )
-                    output_orgunits.append(ou)
-                else:
-                    # Some DHIS2 instances return 409 if already present (idempotency)
-                    body = getattr(res, "text", "")
-                    if status == 409:
-                        current_run.log_info(
-                            f"OrgUnit {ou} already present for '{endpoint}' (409)."
-                        )
-                    else:
-                        current_run.log_error(
-                            f"Failed to add orgUnit {ou} to '{endpoint}': "
-                            f"status={status}, body={body}"
-                        )
-            except Exception as e:
-                current_run.log_error(f"Exception while adding orgUnit {ou} to '{endpoint}': {e!s}")
-    return list(existing_ids_dedop.union(output_orgunits))
+    # Return final reconciled set
+    return sorted(existing_ids_dedop)
 
 
 @snis_to_dedop_sync.task
