@@ -314,6 +314,40 @@ def sync_missing_orgunits(
         if org_unit_ids is None
         else existing_ids_snis.intersection(set(org_unit_ids)) - existing_ids_dedop
     )
+
+    to_delete = (
+        existing_ids_dedop - existing_ids_snis
+        if org_unit_ids is None
+        else existing_ids_dedop.intersection(set(org_unit_ids)) - existing_ids_snis
+    )
+    if to_delete:
+        current_run.log_info(
+            f"Les orgUnits {', '.join(sorted(to_delete))} sont présents dans le dataset "
+            f"{dataset_id} de Dedop mais absents de SNIS. "
+        )
+        url = f"{dedop.api.url}/dataSets/{dataset_id}/organisationUnits"
+        for ou in sorted(to_delete):
+            for endpoint in (f"{url}/{ou}",):
+                try:
+                    res = dedop.api.session.delete(url=endpoint)
+                    status = getattr(res, "status_code", None)
+                    if status in (200, 204):
+                        current_run.log_info(
+                            f"Suppression de l'orgUnit {ou} du DataSet {dataset_id} "
+                            f"(status={status})."
+                        )
+                        existing_ids_dedop.remove(ou)
+                    else:
+                        body = getattr(res, "text", "")
+                        current_run.log_error(
+                            f"Échec de la suppression de l'orgUnit {ou} de '{endpoint}': "
+                            f"status={status}, body={body}"
+                        )
+                except Exception as e:
+                    current_run.log_error(
+                        f"Exception lors de la suppression de l'orgUnit {ou} de '{endpoint}': {e!s}"
+                    )
+
     if not to_add:
         current_run.log_info(f"Aucun orgunit manquant à synchroniser pour le dataset {dataset_id}")
         return list(existing_ids_dedop)
