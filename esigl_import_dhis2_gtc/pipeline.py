@@ -124,6 +124,13 @@ EXTENDED_PRODUCT_CODE = {
     required=True,
 )
 @parameter(
+    "dataset_id",
+    type=str,  # type: ignore
+    name="Formulaire eSIGL GTC DHIS2 ID",
+    required=False,
+    default="FxlkZtA0VbX",
+)
+@parameter(
     "import_mode",
     type=str,  # type: ignore
     name="Import mode",
@@ -139,13 +146,6 @@ EXTENDED_PRODUCT_CODE = {
     name="Dry run",
     help="Simulate DHIS2 import",
     required=False,
-)
-@parameter(
-    "dataset_id",
-    type=str,  # type: ignore
-    name="DataSet: Formulaire eSIGL GTC ID",
-    required=False,
-    default="FxlkZtA0VbX",
 )
 def esigl_import_dhis2(
     dhis2_connection: DHIS2Connection,
@@ -400,7 +400,7 @@ def extract_data_from_esigl(
     current_run.log_info(
         f"Extracting data from eSIGL from period: "
         f"`{cmm_start_dt.strftime('%Y-%m-%d')}` to `{end_dt.strftime('%Y-%m-%d')}`"
-        "3 additional months are included for CMM calculation."
+        " 3 additional months are included for CMM calculation."
     )
 
     processing_periods = f""" pp.enddate BETWEEN '{cmm_start_dt.strftime("%Y-%m-%d")}'::date AND '{end_dt.strftime("%Y-%m-%d")}'::date"""  # noqa: E501
