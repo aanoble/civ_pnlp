@@ -184,7 +184,7 @@ def snis_to_dedop_sync(
             continue
 
         if not org_unit_ids:
-            org_unit_ids = sync_dataset_orgunits(
+            sync_dataset_orgunits(
                 snis=snis, dedop=dedop, dataset_id=dataset_id, org_unit_ids=org_unit_ids
             )
 
@@ -278,7 +278,7 @@ def process_periods(
 @snis_to_dedop_sync.task
 def sync_dataset_orgunits(
     snis: DHIS2, dedop: DHIS2, dataset_id: str, org_unit_ids: list[str] | None
-) -> list[str]:
+) -> None:
     """Synchronize (add/remove) organisation units for a dataset between SNIS and Dedop.
 
     Parameters.
@@ -291,11 +291,6 @@ def sync_dataset_orgunits(
         Identifier of the dataset to synchronize organisation units for.
     org_unit_ids : list[str] | None
         Specific organisation unit IDs to consider (None to include all).
-
-    Returns
-    -------
-    list[str]
-        List of organisation unit IDs that are present in the Dedop dataset after synchronization.
     """
     # Extract organisation units from SNIS dataset
     dataset_units_snis = snis.api.get(
@@ -388,7 +383,7 @@ def sync_dataset_orgunits(
             )
 
     # Return final reconciled set
-    return sorted(existing_ids_dedop)
+    return
 
 
 @snis_to_dedop_sync.task
