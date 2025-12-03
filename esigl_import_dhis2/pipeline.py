@@ -108,6 +108,13 @@ from utils import check_metabase_server_health, get_date_report, parse_cutoff_da
     multiple=True,
 )
 @parameter(
+    "dataset_id",
+    type=str,  # type: ignore
+    name="Formulaire eSIGL Routine DHIS2 ID",
+    required=False,
+    default="RGDJeX2D1bJ",
+)
+@parameter(
     "months_back",
     type=int,  # type: ignore
     name="Historical period in months",
@@ -139,6 +146,7 @@ def esigl_import_dhis2(
     fp_coc_mapping: str,
     fp_ou_de_mapping: str,
     output_directory: str,
+    dataset_id: str,
     dhis2_aoc: str = "HllvX50cXC0",
     start_date: str | None = None,
     end_date: str | None = None,
@@ -158,6 +166,7 @@ def esigl_import_dhis2(
         fp_ou_de_mapping: Chemin du mapping orgUnit et dataElement
         output_directory: Répertoire de sortie
         dhis2_aoc: COC attribut DHIS2
+        dataset_id: Identifiant du dataset DHIS2
         start_date: Date de début pour l'extraction des données
         end_date: Date de fin pour l'extraction des données
         months_back: Nombre de mois à rafraîchir
@@ -175,7 +184,7 @@ def esigl_import_dhis2(
 
     dhis2 = DHIS2(connection=dhis2_connection, cache_dir=Path(workspace.files_path, ".cache"))
 
-    add_missing_orgunits(dhis2, df_ou_mapping)
+    add_missing_orgunits(dhis2, df_ou_mapping, dataset_id=dataset_id)
     data_elements_routine = fetch_routine_data_elements(dhis2=dhis2)
 
     df_etat_stock = extract_data_from_esigl(
@@ -195,6 +204,7 @@ def esigl_import_dhis2(
     summary = push_data_to_dhis2(
         dhis2=dhis2,
         payload=payload,
+        dataset_id=dataset_id,
         dry_run=dry_run,
         import_mode=import_mode,
         post_batch_size=post_batch_size,
@@ -250,8 +260,8 @@ def read_ressources_files(
 def add_missing_orgunits(
     dhis2: DHIS2,
     df_ou_mapping: pl.DataFrame,
+    dataset_id: str = "RGDJeX2D1bJ",
     group_uid: str = "nJ1jXZxufek",
-    dataset_uid: str = "RGDJeX2D1bJ",
 ) -> None:
     """Ensure all mapped org units are members of the target group and dataset.
 
@@ -262,8 +272,8 @@ def add_missing_orgunits(
     Args:
         dhis2: Client DHIS2 configuré
         df_ou_mapping: DataFrame du mapping des unités organisationnelles
+        dataset_id: UID de l'ensemble de données
         group_uid: UID du groupe d'unités organisationnelles
-        dataset_uid: UID de l'ensemble de données
     """
     # Collect existing members of the org unit group
     group_resp = dhis2.api.get(
@@ -296,7 +306,7 @@ def add_missing_orgunits(
         current_run.log_info(f"Adding orgUnit {ou} to OrgUnitGroup and DataSet per mapping.")
 
         for endpoint in (
-            f"dataSets/{dataset_uid}/organisationUnits/{ou}",
+            f"dataSets/{dataset_id}/organisationUnits/{ou}",
             f"organisationUnitGroups/{group_uid}/organisationUnits/{ou}",
         ):
             try:
@@ -571,6 +581,7 @@ def prepare_data_for_dhis2(
 def push_data_to_dhis2(
     dhis2: DHIS2,
     payload: list[dict],
+    dataset_id: str,
     dry_run: bool,
     import_mode: str = "CREATE_AND_UPDATE",
     post_batch_size: int = 5000,
@@ -580,6 +591,7 @@ def push_data_to_dhis2(
     Args:
         dhis2: Client DHIS2 configuré
         payload: Données à importer
+        dataset_id: Identifiant du dataset DHIS2
         dry_run: Mode test sans écriture
         import_mode: Stratégie d'import DHIS2 (CREATE, UPDATE, CREATE_AND_UPDATE)
         post_batch_size: Taille des lots pour les requêtes POST DHIS2
@@ -607,6 +619,7 @@ def push_data_to_dhis2(
     request_params = {"dryRun": dry_run, "importStrategy": import_mode}
     max_retries = 3
     backoff_base = 1.0
+    url = dhis2.api.url + "/dataValueSets"
 
     for idx, chunk in enumerate(_chunks(payload, post_batch_size), start=1):
         import_counts = {"imported": 0, "updated": 0, "ignored": 0, "deleted": 0}
@@ -614,8 +627,8 @@ def push_data_to_dhis2(
 
         response = None
         for attempt in range(1, max_retries + 1):
-            response = dhis2.api.post(
-                endpoint="dataValueSets", json={"dataValues": chunk}, params=request_params
+            response = dhis2.api.session.post(
+                url=url, json={"dataSet": dataset_id, "dataValues": chunk}, params=request_params
             )
             status = response.status_code
             if status == 200:
