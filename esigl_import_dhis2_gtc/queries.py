@@ -58,6 +58,38 @@ INNER JOIN latest_records lr
 ORDER BY tgtc.code_site, tgtc.code_produit
 """
 
+NEW_QUERY_ETAT_STOCK_GTC = """
+SELECT
+    TO_CHAR(pp.enddate, 'YYYYMM') AS period,
+    pp.enddate AS enddate,
+    f.code AS code_site,
+    rli.productcode AS code_produit,
+    rli.beginningbalance AS stock_initial,
+    rli.quantityreceived AS quantite_recue,
+    rli.quantitydispensed AS quantite_distribuee,
+    rli.stockoutdays AS nbrejrsrupture,
+    rli.totallossesandadjustments AS perte_ajustement,
+    -- rli.calculatedorderquantity AS quantite_proposee,
+    -- rli.quantityrequested AS quantite_commandee,
+    -- rli.quantityapproved AS quantite_approuvee,
+    rli.stockinhand AS sdu
+FROM requisition_line_items rli
+INNER JOIN requisitions r ON rli.rnrid = r.id
+INNER JOIN processing_periods pp ON r.periodid = pp.id
+INNER JOIN facilities f ON r.facilityid = f.id
+INNER JOIN programs p ON r.programid = p.id
+INNER JOIN products pr ON rli.productcode = pr.code
+INNER JOIN program_products ppd ON (pr.id = ppd.productid AND ppd.programid = p.id)
+INNER JOIN geographic_zones gz ON f.geographiczoneid = gz.id
+WHERE rli.skipped = FALSE
+    AND {products_code}
+    AND {processing_periods}
+    AND p.id = 19
+    AND r.status NOT IN ('INITIATED', 'SUBMITTED')
+    AND r.emergency = FALSE
+    AND rli.fullsupply = TRUE
+ORDER BY enddate, code_site, code_produit
+"""
 # processing_periods.startdate >= DATE_TRUNC('month', CURRENT_DATE)
 #  - INTERVAL '{lookback_months} months'
 # pp.startdate BETWEEN '2025-01-01' AND '2025-01-31'

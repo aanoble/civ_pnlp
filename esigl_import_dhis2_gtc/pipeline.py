@@ -18,7 +18,7 @@ from openhexa.sdk import (
     workspace,
 )
 from openhexa.toolbox.dhis2 import DHIS2
-from queries import QUERY_ETAT_STOCK_GTC
+from queries import NEW_QUERY_ETAT_STOCK_GTC
 from utils import check_metabase_server_health, parse_cutoff_date
 
 EXTENDED_PRODUCT_CODE = {
@@ -140,12 +140,20 @@ EXTENDED_PRODUCT_CODE = {
     help="Simulate DHIS2 import",
     required=False,
 )
+@parameter(
+    "dataset_id",
+    type=str,  # type: ignore
+    name="DataSet: Formulaire eSIGL GTC ID",
+    required=False,
+    default="FxlkZtA0VbX",
+)
 def esigl_import_dhis2(
     dhis2_connection: DHIS2Connection,
     metabase_connection: CustomConnection,
     fp_coc_mapping: str,
     fp_ou_de_mapping: str,
     output_directory: str,
+    dataset_id: str,
     dhis2_aoc: str = "HllvX50cXC0",
     start_date: str | None = None,
     end_date: str | None = None,
@@ -165,6 +173,7 @@ def esigl_import_dhis2(
         fp_ou_de_mapping: Chemin du mapping orgUnit et dataElement
         output_directory: Répertoire de sortie
         dhis2_aoc: COC attribut DHIS2
+        dataset_id: Identifiant du dataset DHIS2
         start_date: Date de début pour l'extraction des données
         end_date: Date de fin pour l'extraction des données
         months_back: Nombre de mois à rafraîchir
@@ -192,13 +201,14 @@ def esigl_import_dhis2(
         product_code,
     )
 
-    add_missing_ou = add_missing_orgunits(dhis2, df_etat_stock)
+    add_missing_ou = add_missing_orgunits(dhis2, df_etat_stock, dataset_id=dataset_id)
 
     payload = prepare_data_for_dhis2(df_etat_stock, df_coc_mapping, dhis2_aoc)
 
     summary = push_data_to_dhis2(
         dhis2=dhis2,
         payload=payload,
+        dataset_id=dataset_id,
         dry_run=dry_run,
         import_mode=import_mode,
         post_batch_size=post_batch_size,
@@ -276,7 +286,7 @@ def fetch_gtc_dataelement(dhis2: DHIS2) -> pl.DataFrame:
 def add_missing_orgunits(
     dhis2: DHIS2,
     df_etat_stock: pl.DataFrame,
-    dataset_uid: str = "FxlkZtA0VbX",
+    dataset_id: str,
 ) -> None:
     """Ensure all mapped org units are members of the target dataset.
 
@@ -287,11 +297,11 @@ def add_missing_orgunits(
     Args:
         dhis2: Client DHIS2 configuré
         df_etat_stock: DataFrame contenant les données extraites d'eSIGL
-        dataset_uid: UID de l'ensemble de données
+        dataset_id: DHIS2 ID de l'ensemble de données
     """
     # Collect existing members of the org unit group
     dataset_units = dhis2.api.get(
-        endpoint=f"dataSets/{dataset_uid}?fields=organisationUnits[id]", use_cache=False
+        endpoint=f"dataSets/{dataset_id}?fields=organisationUnits[id]", use_cache=False
     )
     existing_ids = {ou["id"] for ou in dataset_units.get("organisationUnits", [])}
 
@@ -313,7 +323,7 @@ def add_missing_orgunits(
     for ou in sorted(to_add):
         current_run.log_info(f"Adding orgUnit {ou} to DataSet per mapping.")
 
-        for endpoint in (f"dataSets/{dataset_uid}/organisationUnits/{ou}",):
+        for endpoint in (f"dataSets/{dataset_id}/organisationUnits/{ou}",):
             try:
                 res = dhis2.api.post(endpoint=endpoint)
                 status = getattr(res, "status_code", None)
@@ -386,15 +396,16 @@ def extract_data_from_esigl(
             f"Adjusting start date to {start_dt.strftime('%Y-%m-%d')} "
             f"based on months_back parameter"
         )
-
+    cmm_start_dt = start_dt - relativedelta(months=3)
     current_run.log_info(
         f"Extracting data from eSIGL from period: "
-        f"`{start_dt.strftime('%Y-%m-%d')}` to `{end_dt.strftime('%Y-%m-%d')}`"
+        f"`{cmm_start_dt.strftime('%Y-%m-%d')}` to `{end_dt.strftime('%Y-%m-%d')}`"
+        "3 additional months are included for CMM calculation."
     )
 
-    processing_periods = f""" pp.startdate BETWEEN '{start_dt.strftime("%Y-%m-%d")}'::date AND '{end_dt.strftime("%Y-%m-%d")}'::date"""  # noqa: E501
+    processing_periods = f""" pp.enddate BETWEEN '{cmm_start_dt.strftime("%Y-%m-%d")}'::date AND '{end_dt.strftime("%Y-%m-%d")}'::date"""  # noqa: E501
 
-    query_etat_stock = QUERY_ETAT_STOCK_GTC
+    query_etat_stock = NEW_QUERY_ETAT_STOCK_GTC
 
     if facilities_code:
         df_site = pl.DataFrame(mb_client.get_data_from_sql_query("SELECT code FROM facilities"))
@@ -475,21 +486,80 @@ def extract_data_from_esigl(
         on="code_site",
         how="inner",
     )
+    # Normalisation des données pour le calcul des cmm
+    df_cmm = (
+        df_etat_stock.select(
+            pl.col("period"),
+            pl.col("orgUnit"),
+            pl.col("dataElement"),
+            pl.col("quantite_distribuee"),
+        )
+        .group_by(["period", "orgUnit", "dataElement"])
+        .agg(pl.col("quantite_distribuee").sum().alias("quantite_distribuee"))
+    )
+    df_cmm = df_cmm.with_columns(
+        pl.col("period").str.strptime(pl.Date, format="%Y%m").alias("period_date")
+    ).sort(["orgUnit", "dataElement", "period_date"])
+
+    df_cmm = (
+        df_cmm.group_by(["orgUnit", "dataElement"])
+        .agg(
+            [
+                pl.col("period_date"),
+                pl.col("quantite_distribuee")
+                .rolling_mean(window_size=3, min_periods=1)
+                .alias("cmm"),
+            ]
+        )
+        .explode(["period_date", "cmm"])
+        .join(df_cmm, on=["orgUnit", "dataElement", "period_date"], how="left")
+    )
 
     # En raison du fait qu'il peut y avoir des unités d'organisation DEDOP mappé à un
     # ou plusieurs site eSIGL, on doit sommer les valeurs par
     # dataElement, attributeOptionCombo, orgUnit et period
     df_etat_stock = (
-        df_etat_stock.select(
+        df_etat_stock.with_columns(pl.col("enddate").cast(pl.Datetime))
+        .filter(pl.col("enddate") >= start_dt)
+        .select(
             pl.col("period"),
             pl.col("orgUnit"),
             pl.col("dataElement"),
-            pl.col(pl.NUMERIC_DTYPES),
+            pl.col("quantite_recue"),
+            pl.col("quantite_distribuee"),
+            pl.col("nbrejrsrupture"),
+            pl.col("perte_ajustement"),
+            pl.col("stock_initial"),
+            pl.col("sdu"),
         )
         .group_by(["period", "orgUnit", "dataElement"])
-        .agg(pl.col(pl.NUMERIC_DTYPES).sum())
+        .agg(
+            pl.col("quantite_recue").sum().alias("quantite_recue"),
+            pl.col("quantite_distribuee").sum().alias("quantite_distribuee"),
+            pl.col("nbrejrsrupture").sum().alias("nbrejrsrupture"),
+            pl.col("perte_ajustement").sum().alias("perte_ajustement"),
+            pl.col("stock_initial").first().alias("stock_initial"),
+            pl.col("sdu").last().alias("sdu"),
+        )
     )
+
+    df_etat_stock = df_etat_stock.join(
+        df_cmm.select(
+            pl.col("period"),
+            pl.col("orgUnit"),
+            pl.col("dataElement"),
+            pl.col("cmm"),
+        ),
+        on=["period", "orgUnit", "dataElement"],
+        how="left",
+    )
+
     df_etat_stock = df_etat_stock.with_columns(pl.col(pl.NUMERIC_DTYPES).round(0).cast(pl.Int64))
+    df_etat_stock = df_etat_stock.with_columns(
+        pl.lit(None).cast(pl.Int64).alias("quantite_proposee"),
+        pl.lit(None).cast(pl.Int64).alias("quantite_commandee"),
+        pl.lit(None).cast(pl.Int64).alias("quantite_approuvee"),
+    )
 
     current_run.log_info(f"Extracted {df_etat_stock.shape[0]} records from eSIGL")
     return df_etat_stock
@@ -536,6 +606,7 @@ def prepare_data_for_dhis2(
 def push_data_to_dhis2(
     dhis2: DHIS2,
     payload: list[dict],
+    dataset_id: str,
     dry_run: bool,
     import_mode: str = "CREATE_AND_UPDATE",
     post_batch_size: int = 5000,
@@ -546,6 +617,7 @@ def push_data_to_dhis2(
     Args:
         dhis2: Client DHIS2 configuré
         payload: Données à importer
+        dataset_id: Identifiant du dataset DHIS2
         dry_run: Mode test sans écriture
         import_mode: Stratégie d'import DHIS2 (CREATE, UPDATE, CREATE_AND_UPDATE)
         post_batch_size: Taille des lots pour les requêtes POST DHIS2
@@ -575,6 +647,7 @@ def push_data_to_dhis2(
     request_params = {"dryRun": dry_run, "importStrategy": import_mode}
     max_retries = 3
     backoff_base = 1.0
+    url = dhis2.api.url + "/dataValueSets"
 
     for idx, chunk in enumerate(_chunks(payload, post_batch_size), start=1):
         import_counts = {"imported": 0, "updated": 0, "ignored": 0, "deleted": 0}
@@ -582,8 +655,8 @@ def push_data_to_dhis2(
 
         response = None
         for attempt in range(1, max_retries + 1):
-            response = dhis2.api.post(
-                endpoint="dataValueSets", json={"dataValues": chunk}, params=request_params
+            response = dhis2.api.session.post(
+                url=url, json={"dataSet": dataset_id, "dataValues": chunk}, params=request_params
             )
             status = response.status_code
             if status == 200:
