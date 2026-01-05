@@ -726,7 +726,7 @@ def fetch_metabase_gtc_data(
     )
     df_metabase_gtc = (
         df_metabase_gtc.with_columns(pl.col("enddate").cast(pl.Datetime))
-        .filter(pl.col("enddate") >= start_dt)
+        .filter(pl.col("enddate") >= start_dt + relativedelta(months=3))
         .select(
             pl.col("period"),
             pl.col("organisation_unit_id"),
@@ -762,24 +762,25 @@ def fetch_metabase_gtc_data(
     df_metabase_gtc = df_metabase_gtc.with_columns(
         pl.col(pl.NUMERIC_DTYPES).round(0).cast(pl.Int64)
     )
-    df_metabase_gtc = df_metabase_gtc.with_columns(
-        pl.lit(None).cast(pl.Int64).alias("quantite_proposee"),
-        pl.lit(None).cast(pl.Int64).alias("quantite_commandee"),
-        pl.lit(None).cast(pl.Int64).alias("quantite_approuvee"),
-    )
+    # df_metabase_gtc = df_metabase_gtc.with_columns(
+    #     pl.lit(None).cast(pl.Int64).alias("quantite_proposee"),
+    #     pl.lit(None).cast(pl.Int64).alias("quantite_commandee"),
+    #     pl.lit(None).cast(pl.Int64).alias("quantite_approuvee"),
+    # )
 
     # Renommage des colonnes d'intérêt
-    df_metabase_gtc = df_metabase_gtc.rename(COC_MAPPING)
+    dico_rename = {k: v for k, v in COC_MAPPING.items() if k in df_metabase_gtc.columns}
+    df_metabase_gtc = df_metabase_gtc.rename(dico_rename)
     df_metabase_gtc = df_metabase_gtc.unpivot(
         index=["data_element_id", "period", "organisation_unit_id"],
-        on=list(COC_MAPPING.values()),
+        on=list(dico_rename.values()),
         variable_name="category_option_combo_id",
         value_name="value",
     ).with_columns(pl.col("value").cast(pl.Int64))
 
-    # df_metabase_gtc = df_metabase_gtc.group_by(
-    #     ["data_element_id", "period", "organisation_unit_id", "category_option_combo_id"]
-    # ).agg(pl.col("value").sum().alias("value"))
+    df_metabase_gtc = df_metabase_gtc.group_by(
+        ["data_element_id", "period", "organisation_unit_id", "category_option_combo_id"]
+    ).agg(pl.col("value").sum().alias("value"))
 
     current_run.log_debug(f"GTC DataFrame columns: {df_metabase_gtc.columns}")
     return df_metabase_gtc
