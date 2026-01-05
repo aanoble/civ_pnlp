@@ -1074,6 +1074,14 @@ def process_data_with_org_units(
         .otherwise(pl.lit("level_5"))
         .alias("type_ou"),
     )
+    if "ou_name" in df_processed.columns:
+        df_processed = df_processed.with_columns(
+            pl.when((pl.col("ou_name") == "SAN PEDRO") & pl.col("district").is_null())
+            .then(pl.lit("SAN-PEDRO"))
+            .otherwise(pl.col("district"))
+            .alias("district")
+        )
+
     if table_name == "esigl_vs_dedop_data_module_3":
         df_processed = (
             df_processed.select(
