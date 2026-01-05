@@ -777,9 +777,9 @@ def fetch_metabase_gtc_data(
         value_name="value",
     ).with_columns(pl.col("value").cast(pl.Int64))
 
-    df_metabase_gtc = df_metabase_gtc.group_by(
-        ["data_element_id", "period", "organisation_unit_id", "category_option_combo_id"]
-    ).agg(pl.col("value").sum().alias("value"))
+    # df_metabase_gtc = df_metabase_gtc.group_by(
+    #     ["data_element_id", "period", "organisation_unit_id", "category_option_combo_id"]
+    # ).agg(pl.col("value").sum().alias("value"))
 
     current_run.log_debug(f"GTC DataFrame columns: {df_metabase_gtc.columns}")
     return df_metabase_gtc
