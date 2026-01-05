@@ -507,7 +507,7 @@ def extract_data_from_esigl(
             [
                 pl.col("period_date"),
                 pl.col("quantite_distribuee")
-                .rolling_mean(window_size=3, min_periods=1)
+                .rolling_mean(window_size=3, min_periods=1)  # type: ignore
                 .alias("cmm"),
             ]
         )

@@ -23,7 +23,7 @@ from openhexa.sdk import (
 )
 from openhexa.toolbox.dhis2 import DHIS2
 from openhexa.toolbox.dhis2.dataframe import extract_data_elements, get_organisation_units
-from queries import QUERY_ETAT_STOCK, QUERY_ETAT_STOCK_GTC
+from queries import NEW_QUERY_ETAT_STOCK_GTC, QUERY_ETAT_STOCK
 from utils import (
     check_metabase_server_health,
     check_server_health,
@@ -625,13 +625,14 @@ def fetch_metabase_gtc_data(
     start_dt = min(periods_range)
     end_dt = max(periods_range)
     # Adjust to first and last day of month
-    start_dt = start_dt.replace(day=1)  # type: ignore
+    start_dt = start_dt.replace(day=1) - relativedelta(months=3)  # type: ignore
     end_dt = end_dt + relativedelta(day=31)  # type: ignore
 
     msg_info = (
         "⏳ Extraction des données GTC depuis Metabase "
         # type: ignore
-        f"aux périodes: `{start_dt.strftime('%Y-%m-%d')} - {end_dt.strftime('%Y-%m-%d')}`..."
+        f"aux périodes: `{start_dt.strftime('%Y-%m-%d')} - {end_dt.strftime('%Y-%m-%d')}`"
+        "recul de 3 mois appliqué pour le calcul des CMM..."
     )
     current_run.log_info(msg_info)
 
@@ -657,7 +658,7 @@ def fetch_metabase_gtc_data(
 
     products_code = f" rli.productcode IN {tuple(products_code) if len(products_code) > 1 else f'({products_code[0]!r})'}"  # type: ignore # noqa: E501
 
-    sql_query = QUERY_ETAT_STOCK_GTC.format(
+    sql_query = NEW_QUERY_ETAT_STOCK_GTC.format(
         products_code=products_code, processing_periods=processing_periods
     )
     current_run.log_debug(sql_query)
@@ -693,10 +694,80 @@ def fetch_metabase_gtc_data(
         on="code_site",
         how="inner",
     )
+    current_run.log_info(f"Extracted {df_metabase_gtc.shape[0]} GTC records from eSIGL")
+
+    # Normalisation des données pour le calcul des cmm
+    df_cmm = (
+        df_metabase_gtc.select(
+            pl.col("period"),
+            pl.col("organisation_unit_id"),
+            pl.col("data_element_id"),
+            pl.col("quantite_distribuee"),
+        )
+        .group_by(["period", "organisation_unit_id", "data_element_id"])
+        .agg(pl.col("quantite_distribuee").sum().alias("quantite_distribuee"))
+    )
+    df_cmm = df_cmm.with_columns(
+        pl.col("period").str.strptime(pl.Date, format="%Y%m").alias("period_date")
+    ).sort(["organisation_unit_id", "data_element_id", "period_date"])
+
+    df_cmm = (
+        df_cmm.group_by(["organisation_unit_id", "data_element_id"])
+        .agg(
+            [
+                pl.col("period_date"),
+                pl.col("quantite_distribuee")
+                .rolling_mean(window_size=3, min_periods=1)  # type: ignore
+                .alias("cmm"),
+            ]
+        )
+        .explode(["period_date", "cmm"])
+        .join(df_cmm, on=["organisation_unit_id", "data_element_id", "period_date"], how="left")
+    )
+    df_metabase_gtc = (
+        df_metabase_gtc.with_columns(pl.col("enddate").cast(pl.Datetime))
+        .filter(pl.col("enddate") >= start_dt)
+        .select(
+            pl.col("period"),
+            pl.col("organisation_unit_id"),
+            pl.col("data_element_id"),
+            pl.col("quantite_recue"),
+            pl.col("quantite_distribuee"),
+            pl.col("nbrejrsrupture"),
+            pl.col("perte_ajustement"),
+            pl.col("stock_initial"),
+            pl.col("sdu"),
+        )
+        .group_by(["period", "organisation_unit_id", "data_element_id"])
+        .agg(
+            pl.col("quantite_recue").sum().alias("quantite_recue"),
+            pl.col("quantite_distribuee").sum().alias("quantite_distribuee"),
+            pl.col("nbrejrsrupture").sum().alias("nbrejrsrupture"),
+            pl.col("perte_ajustement").sum().alias("perte_ajustement"),
+            pl.col("stock_initial").first().alias("stock_initial"),
+            pl.col("sdu").last().alias("sdu"),
+        )
+    )
+    df_metabase_gtc = df_metabase_gtc.join(
+        df_cmm.select(
+            pl.col("period"),
+            pl.col("organisation_unit_id"),
+            pl.col("data_element_id"),
+            pl.col("cmm"),
+        ),
+        on=["period", "organisation_unit_id", "data_element_id"],
+        how="left",
+    )
+
+    df_etat_stock = df_metabase_gtc.with_columns(pl.col(pl.NUMERIC_DTYPES).round(0).cast(pl.Int64))
+    df_etat_stock = df_etat_stock.with_columns(
+        pl.lit(None).cast(pl.Int64).alias("quantite_proposee"),
+        pl.lit(None).cast(pl.Int64).alias("quantite_commandee"),
+        pl.lit(None).cast(pl.Int64).alias("quantite_approuvee"),
+    )
+
     # Renommage des colonnes d'intérêt
     df_metabase_gtc = df_metabase_gtc.rename(COC_MAPPING)
-
-    current_run.log_info(f"Extracted {df_metabase_gtc.shape[0]} GTC records from eSIGL")
     df_metabase_gtc = df_metabase_gtc.unpivot(
         index=["data_element_id", "period", "organisation_unit_id"],
         on=list(COC_MAPPING.values()),
