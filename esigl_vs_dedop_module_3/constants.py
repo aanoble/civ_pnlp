@@ -8,8 +8,8 @@ EXTENDED_PRODUCT_CODE = {
 
 
 COC_MAPPING = {
-    "stock_initial": "MxwO32EmLkm",
-    "quantite_recue": "VpsWXngJn8m",
+    "stock_initial": "VpsWXngJn8m",
+    "quantite_recue": "MxwO32EmLkm",
     "quantite_distribuee": "r4Y2vAZNFJr",
     "perte_ajustement": "DaYWwwQWpzO",
     "sdu": "MsVzBFeQy98",
