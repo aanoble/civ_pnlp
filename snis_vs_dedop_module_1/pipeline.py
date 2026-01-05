@@ -906,7 +906,7 @@ def get_dates_from_df(df_compare: pl.DataFrame, df_completude: pl.DataFrame) -> 
             process_dates_from_df(df_completude),
         ],
         how="diagonal_relaxed",
-    )
+    ).unique()
 
 
 if __name__ == "__main__":
