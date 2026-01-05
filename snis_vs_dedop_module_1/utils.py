@@ -1,5 +1,6 @@
 from datetime import datetime
 
+import polars as pl
 from openhexa.sdk import current_run
 from openhexa.toolbox.dhis2 import DHIS2
 
@@ -62,3 +63,40 @@ def parse_cutoff_date(date_str: str) -> datetime:
     except (ValueError, TypeError) as e:
         current_run.log_error(f"Format de date invalide: '{date_str}' - {e!s}")
         raise ValueError(f"Format de date invalide: '{date_str}'. Requis: YYYY-MM-DD") from e
+
+
+def process_dates_from_df(df: pl.DataFrame) -> pl.DataFrame:
+    """Prépare un DataFrame avec des champs temporels normalisés.
+
+    Args:
+        df: DataFrame Polars contenant au minimum les colonnes
+            "date_report" (Datetime) et "period" (str).
+
+    Returns:
+        DataFrame avec les colonnes suivantes:
+        - date_report: date d'origine
+        - period: période libellée (ex: "MARS 2024")
+        - date_order: entier AAAAMM (Int32) pour le tri chronologique
+        - annee: année extraite de "date_report"
+
+    Notes:
+        - "date_report" doit être de type Datetime.
+        - "date_order" facilite l'ordonnancement chronologique dans les rapports.
+    """
+    if df.is_empty():
+        return df.with_columns(
+            [
+                pl.col("date_report").cast(pl.Datetime),
+                pl.col("period").cast(pl.Utf8),
+                pl.lit(None).cast(pl.Int32).alias("date_order"),
+                pl.lit(None).cast(pl.Int32).alias("annee"),
+            ]
+        )
+    return df.select(
+        pl.col("date_report"),
+        pl.col("period"),
+        (pl.col("date_report").dt.year() * 100 + pl.col("date_report").dt.month())
+        .cast(pl.Int32)
+        .alias("date_order"),
+        pl.col("date_report").dt.year().alias("annee").cast(pl.Int32),
+    )

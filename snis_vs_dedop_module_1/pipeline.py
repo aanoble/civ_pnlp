@@ -23,7 +23,12 @@ from openhexa.toolbox.dhis2.dataframe import (
     get_datasets,
     get_organisation_units,
 )
-from utils import check_server_health, last_analytics_update, parse_cutoff_date
+from utils import (
+    check_server_health,
+    last_analytics_update,
+    parse_cutoff_date,
+    process_dates_from_df,
+)
 
 
 @pipeline("snis_vs_dedop_module_1")
@@ -73,8 +78,8 @@ def snis_vs_dedop_module_1(
     months_back: int,
 ) -> None:
     """Main pipeline function for SNIS vs Dedop Module 1 data comparison and analysis."""
-    snis = DHIS2(connection=snis_connection, cache_dir=None)
-    dedop = DHIS2(connection=dedop_connection, cache_dir=None)
+    snis = DHIS2(connection=snis_connection)
+    dedop = DHIS2(connection=dedop_connection)
 
     check_server_health(snis)
     check_server_health(dedop)
@@ -158,6 +163,8 @@ def snis_vs_dedop_module_1(
         table_name="snis_vs_dedop_data_module_1_completude",
     )
 
+    df_dim_date = get_dates_from_df(df_compare, df_completude)
+
     # Exportation des données vers la BD
     export_to_database(df_data=df_compare, table_name="snis_vs_dedop_data_module_1")
     export_to_database(df_data=df_coherence, table_name="snis_vs_dedop_data_module_1_coherence")
@@ -169,6 +176,8 @@ def snis_vs_dedop_module_1(
     export_to_database(
         df_data=df_completude_district, table_name="snis_vs_dedop_data_module_1_completude_district"
     )
+
+    export_to_database(df_data=df_dim_date, table_name="dim_dedop_dim_report")
 
 
 @snis_vs_dedop_module_1.task
@@ -873,6 +882,31 @@ def export_to_database(
         offset += batch_size
 
     current_run.add_database_output(table_name)
+
+
+@snis_vs_dedop_module_1.task
+def get_dates_from_df(df_compare: pl.DataFrame, df_completude: pl.DataFrame) -> pl.DataFrame:
+    """Récupère les dates de rapport uniques à partir des DataFrames.
+
+    Parameters
+    ----------
+    df_compare : pl.DataFrame
+        DataFrame contenant les résultats de la comparaison.
+    df_completude : pl.DataFrame
+        DataFrame contenant les résultats de la complétude.
+
+    Returns
+    -------
+    pl.DataFrame
+        DataFrame contenant les dates de rapport uniques.
+    """
+    return pl.concat(
+        [
+            process_dates_from_df(df_compare),
+            process_dates_from_df(df_completude),
+        ],
+        how="diagonal_relaxed",
+    )
 
 
 if __name__ == "__main__":

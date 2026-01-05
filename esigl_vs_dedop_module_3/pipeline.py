@@ -30,6 +30,7 @@ from utils import (
     get_date_report,
     last_analytics_update,
     parse_cutoff_date,
+    process_dates_from_df,
 )
 
 
@@ -211,6 +212,8 @@ def esigl_vs_dedop_module_3(
         table_name="esigl_vs_dedop_data_module_3_completude",
     )
 
+    df_dim_date = get_dates_from_df(df_compare, df_completude)
+
     # Exportation des données vers la BD
     export_to_database(df_data=df_compare, table_name="esigl_vs_dedop_data_module_3")
     export_to_database(df_data=df_coherence, table_name="esigl_vs_dedop_data_module_3_coherence")
@@ -223,6 +226,8 @@ def esigl_vs_dedop_module_3(
         df_data=df_completude_district,
         table_name="esigl_vs_dedop_data_module_3_completude_district",
     )
+
+    export_to_database(df_data=df_dim_date, table_name="dim_dedop_dim_report_two")
 
 
 @esigl_vs_dedop_module_3.task
@@ -858,7 +863,7 @@ def evaluate_data_coherence(
     )
     df_coherence = dhis2.meta.add_org_unit_name_column(df_coherence, "organisation_unit_id")
     # type: ignore
-    return dhis2.meta.add_dx_name_column(df_coherence, "data_element_id")
+    return dhis2.meta.add_dx_name_column(df_coherence, "data_element_id")  # type: ignore
 
 
 # .with_columns(
@@ -946,7 +951,7 @@ def evaluate_data_completeness(
 
     df_completude = dhis2.meta.add_org_unit_name_column(df_completude, "organisation_unit_id")
     # type: ignore
-    return dhis2.meta.add_dx_name_column(df_completude, "data_element_id")
+    return dhis2.meta.add_dx_name_column(df_completude, "data_element_id")  # type: ignore
 
 
 # .with_columns(
@@ -1203,6 +1208,31 @@ def export_to_database(
         if_table_exists=mode,
     )  # type: ignore
     current_run.add_database_output(table_name)
+
+
+@esigl_vs_dedop_module_3.task
+def get_dates_from_df(df_compare: pl.DataFrame, df_completude: pl.DataFrame) -> pl.DataFrame:
+    """Récupère les dates de rapport uniques à partir des DataFrames.
+
+    Parameters
+    ----------
+    df_compare : pl.DataFrame
+        DataFrame contenant les résultats de la comparaison.
+    df_completude : pl.DataFrame
+        DataFrame contenant les résultats de la complétude.
+
+    Returns
+    -------
+    pl.DataFrame
+        DataFrame contenant les dates de rapport uniques.
+    """
+    return pl.concat(
+        [
+            process_dates_from_df(df_compare),
+            process_dates_from_df(df_completude),
+        ],
+        how="diagonal_relaxed",
+    )
 
 
 if __name__ == "__main__":
