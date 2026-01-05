@@ -759,8 +759,10 @@ def fetch_metabase_gtc_data(
         how="left",
     )
 
-    df_etat_stock = df_metabase_gtc.with_columns(pl.col(pl.NUMERIC_DTYPES).round(0).cast(pl.Int64))
-    df_etat_stock = df_etat_stock.with_columns(
+    df_metabase_gtc = df_metabase_gtc.with_columns(
+        pl.col(pl.NUMERIC_DTYPES).round(0).cast(pl.Int64)
+    )
+    df_metabase_gtc = df_metabase_gtc.with_columns(
         pl.lit(None).cast(pl.Int64).alias("quantite_proposee"),
         pl.lit(None).cast(pl.Int64).alias("quantite_commandee"),
         pl.lit(None).cast(pl.Int64).alias("quantite_approuvee"),
