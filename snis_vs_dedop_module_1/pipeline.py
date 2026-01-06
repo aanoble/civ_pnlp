@@ -397,6 +397,7 @@ def compare_snis_dedop(
             "category_option_combo_id",
         ],
         suffix="_ddp",
+        how="outer",
     ).drop(["attribute_option_combo_id", "attribute_option_combo_id_ddp"])
 
     # Add meta data columns
