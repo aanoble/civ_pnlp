@@ -855,7 +855,9 @@ def export_to_database(
 
     selected_columns = (
         selected_columns + ["dataset_name"]
-        if "dataset_name" in df_data.columns and "dataset_name" not in selected_columns
+        if "dataset_name" in df_data.columns
+        and "dataset_name" not in selected_columns
+        and table_name != "dim_dedop_dim_report"
         else selected_columns
     )
 
