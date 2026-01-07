@@ -42,7 +42,7 @@ from utils import check_server_health, last_analytics_update, parse_cutoff_date,
     "dataset_id",
     type=str,
     widget=DHIS2Widget.DATASETS,
-    connection="dedop_connection",
+    connection="dedop_connection",  # type: ignore
     name="Dataset ID in Dedop",
     required=False,
     multiple=True,
@@ -51,7 +51,7 @@ from utils import check_server_health, last_analytics_update, parse_cutoff_date,
     "org_unit_id",
     type=str,
     widget=DHIS2Widget.ORG_UNITS,
-    connection="dedop_connection",
+    connection="dedop_connection",  # type: ignore
     name="Organisation Unit ID in Dedop",
     required=False,
     multiple=True,
@@ -393,7 +393,7 @@ def fetch_dhis2_data(
     dataset_id: str,
     org_unit_ids: list[str] | None,
     periods_range: list[datetime],
-    last_updated: str | None,
+    last_updated: datetime | None,
     automate_sync: bool,
 ) -> pl.DataFrame:
     """Fetch data from DHIS2 for given dataset, org unit, periods, and last updated filter.
@@ -410,7 +410,7 @@ def fetch_dhis2_data(
         Organisation unit IDs to filter on (None to include all).
     periods_range : list[datetime]
         List of periods (as datetime objects) to fetch data for.
-    last_updated : str | None
+    last_updated : datetime | None
         Only return records updated since this ISO date (YYYY-MM-DD), if provided.
     automate_sync : bool
         Whether to automate the synchronization process.
@@ -442,9 +442,9 @@ def fetch_dhis2_data(
         filters = f"id:in:[{','.join(data_element_ids)}]"
 
         df_de = pl.DataFrame(
-            dedop.meta.data_elements(fields="id,categoryCombo", filters=filters)
+            dedop.meta.data_elements(fields="id,categoryCombo", filters=[filters])
         ).join(
-            pl.DataFrame(snis.meta.data_elements(fields="id,categoryCombo", filters=filters)),
+            pl.DataFrame(snis.meta.data_elements(fields="id,categoryCombo", filters=[filters])),
             on="id",
         )
         df_de = df_de.with_columns(
@@ -460,15 +460,15 @@ def fetch_dhis2_data(
         # Get period type of target dataset
         datasets = snis.meta.datasets(
             fields="periodType",
-            filters=f"identifiable:token:{dataset_id}",
+            filters=[f"identifiable:token:{dataset_id}"],
         )
-        period_type_source = datasets[0].get("periodType", "Monthly") if datasets else "Monthly"
+        period_type_source = datasets[0].get("periodType", "Monthly") if datasets else "Monthly"  # type: ignore
 
         datasets = dedop.meta.datasets(
             fields="periodType",
-            filters=f"identifiable:token:{dataset_id}",
+            filters=[f"identifiable:token:{dataset_id}"],
         )
-        period_type_target = datasets[0].get("periodType", "Monthly") if datasets else "Monthly"
+        period_type_target = datasets[0].get("periodType", "Monthly") if datasets else "Monthly"  # type: ignore
 
         # Fetch data for each period and aggregate
         current_run.log_info(
@@ -479,7 +479,7 @@ def fetch_dhis2_data(
         if not automate_sync:
             data = dataframe.extract_dataset(
                 snis,
-                dataset=[dataset_id],
+                dataset=dataset_id,
                 org_units=["ZD44Asc0bAk"],
                 start_date=periods_range[0],
                 end_date=periods_range[-1],
@@ -487,7 +487,6 @@ def fetch_dhis2_data(
                 include_children=True,
             )
         else:
-            last_updated = datetime.now().strftime("%Y-%m-%d")
             current_run.log_info(
                 f"Extraction des données en mode automatisé avec "
                 f"la date de dernière mise à jour: {last_updated}"
@@ -496,9 +495,10 @@ def fetch_dhis2_data(
                 endpoint="dataValueSets",
                 params={
                     "dataSet": dataset_id,
+                    "dataElement": ",".join(data_element_ids),
                     "orgUnit": "ZD44Asc0bAk",
                     "children": True,
-                    "lastUpdated": last_updated,
+                    "lastUpdated": datetime.now().strftime("%Y-%m-%d"),
                 },
             )
             data = dataframe._data_values_to_dataframe(data_values.get("dataValues", []))

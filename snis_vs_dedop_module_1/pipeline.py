@@ -346,7 +346,7 @@ def fetch_dhis2_data(
             current_run.log_info(f"Extraction du dataset ID: {dataset_id}")
             df_dataset = extract_dataset(
                 dhis2=dhis2,
-                dataset=[dataset_id],
+                dataset=dataset_id,
                 org_units=["ZD44Asc0bAk"],
                 include_children=True,
                 periods=periods_range,  # type: ignore
@@ -397,7 +397,7 @@ def compare_snis_dedop(
             "category_option_combo_id",
         ],
         suffix="_ddp",
-        how="outer",
+        how="full",
     ).drop(["attribute_option_combo_id", "attribute_option_combo_id_ddp"])
 
     # Add meta data columns
@@ -410,17 +410,16 @@ def compare_snis_dedop(
     ).rename({"value": "value_snis"})  # type: ignore
 
     df_merged = df_merged.with_columns(
-        (pl.col("value_snis") - pl.col("value_ddp")).abs().alias("ecart"),
-        ((pl.col("value_snis") - pl.col("value_ddp")).abs() / pl.col("value_snis")).alias(
-            "ecart_relatif"
-        ),
-    )
-
-    df_merged = df_merged.with_columns(
-        pl.when(pl.col("value_snis") == 0)
+        pl.when(pl.col("value_snis").is_null() & pl.col("value_ddp").is_null())
         .then(None)
-        .otherwise(pl.col("ecart_relatif"))
-        .alias("ecart_relatif")
+        .otherwise((pl.col("value_snis").fill_null(0) - pl.col("value_ddp").fill_null(0)).abs())
+        .alias("ecart"),
+        pl.when((pl.col("value_snis").is_null()) | (pl.col("value_snis") == 0))
+        .then(None)
+        .when(pl.col("value_ddp").is_null())
+        .then(pl.col("value_snis").abs() / pl.col("value_snis"))
+        .otherwise((pl.col("value_snis") - pl.col("value_ddp")).abs() / pl.col("value_snis"))
+        .alias("ecart_relatif"),
     )
 
     locale.setlocale(locale.LC_TIME, "fr_FR.UTF-8")
@@ -465,7 +464,7 @@ def evaluate_data_coherence(dhis2: DHIS2, df_compare: pl.DataFrame) -> pl.DataFr
                     (pl.col("ecart") == 0)
                     | (pl.col("value_snis").is_null() & pl.col("value_ddp").is_null())
                 ).alias("est_coherent"),
-                # Incohérence = écart non nul et au moins une valeur non null
+                # Incohérence = écart non nulle et au moins une valeur non null
                 (pl.col("ecart").is_not_null() & pl.col("ecart") != 0).alias("est_incoherent"),
                 # Toutes les lignes comptent comme comparables
                 pl.lit(True).alias("est_comparable"),
