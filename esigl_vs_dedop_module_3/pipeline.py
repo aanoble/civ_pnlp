@@ -823,7 +823,7 @@ def compare_esigl_dedop(
             "organisation_unit_id",
             "category_option_combo_id",
         ],
-        how="inner",
+        how="full",
         suffix="_ddp",
     )
     df_merged = dhis2.meta.add_dx_name_column(df_merged, "data_element_id")
@@ -832,10 +832,16 @@ def compare_esigl_dedop(
     df_merged = df_merged.rename({"value": "value_esigl"})
 
     df_merged = df_merged.with_columns(
-        (pl.col("value_esigl") - pl.col("value_ddp")).abs().alias("ecart"),
-        ((pl.col("value_esigl") - pl.col("value_ddp")).abs() / pl.col("value_esigl")).alias(
-            "ecart_relatif"
-        ),
+        pl.when(pl.col("value_esigl").is_null() & pl.col("value_ddp").is_null())
+        .then(None)
+        .otherwise((pl.col("value_esigl").fill_null(0) - pl.col("value_ddp").fill_null(0)).abs())
+        .alias("ecart"),
+        pl.when((pl.col("value_esigl").is_null()) | (pl.col("value_esigl") == 0))
+        .then(None)
+        .when(pl.col("value_ddp").is_null())
+        .then(pl.col("value_esigl").abs() / pl.col("value_esigl"))
+        .otherwise((pl.col("value_esigl") - pl.col("value_ddp")).abs() / pl.col("value_esigl"))
+        .alias("ecart_relatif"),
     )  # type: ignore
 
     df_merged = df_merged.with_columns(
