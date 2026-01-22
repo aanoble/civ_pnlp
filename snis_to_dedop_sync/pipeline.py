@@ -487,9 +487,14 @@ def fetch_dhis2_data(
                 include_children=True,
             )
         else:
+            last_updated_str = (
+                last_updated.strftime("%Y-%m-%d")
+                if last_updated
+                else datetime.now().strftime("%Y-%m-%d")
+            )
             current_run.log_info(
                 f"Extraction des données en mode automatisé avec "
-                f"la date de dernière mise à jour: {last_updated}"
+                f"la date de dernière mise à jour: {last_updated_str}"
             )
             data_values = snis.api.get(
                 endpoint="dataValueSets",
@@ -498,10 +503,24 @@ def fetch_dhis2_data(
                     "dataElement": ",".join(data_element_ids),
                     "orgUnit": "ZD44Asc0bAk",
                     "children": True,
-                    "lastUpdated": datetime.now().strftime("%Y-%m-%d"),
+                    "lastUpdated": last_updated_str,
+                    "includeDeleted": True,
                 },
             )
+            subset = [
+                "data_element_id",
+                "period",
+                "organisation_unit_id",
+                "category_option_combo_id",
+                "attribute_option_combo_id",
+                "last_updated",
+            ]
             data = dataframe._data_values_to_dataframe(data_values.get("dataValues", []))
+            data = (
+                data.sort(by=subset)
+                .unique(subset=subset, keep="last")
+                .with_columns(pl.col("value").fill_null(""))
+            )
 
         data = (
             data.filter(pl.col("organisation_unit_id").is_in(org_unit_ids))
