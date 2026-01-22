@@ -471,12 +471,12 @@ def fetch_dhis2_data(
         period_type_target = datasets[0].get("periodType", "Monthly") if datasets else "Monthly"  # type: ignore
 
         # Fetch data for each period and aggregate
-        current_run.log_info(
-            f"Récupération des données depuis le SNIS pour le dataset id `{dataset_id}` "
-            f"pour les périodes `{periods_range[0].strftime('%Y-%m-%d')}`"
-            f" - `{periods_range[-1].strftime('%Y-%m-%d')}`"
-        )
         if not automate_sync:
+            current_run.log_info(
+                f"Récupération des données depuis le SNIS pour le dataset id `{dataset_id}` "
+                f"pour les périodes `{periods_range[0].strftime('%Y-%m-%d')}`"
+                f" - `{periods_range[-1].strftime('%Y-%m-%d')}`"
+            )
             data = dataframe.extract_dataset(
                 snis,
                 dataset=dataset_id,
@@ -519,7 +519,7 @@ def fetch_dhis2_data(
             data = (
                 data.sort(by=subset)
                 .unique(subset=subset, keep="last")
-                .with_columns(pl.col("value").fill_null(""))
+                .with_columns(pl.col("value").fill_null("0"))
             )
 
         data = (
