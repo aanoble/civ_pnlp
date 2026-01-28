@@ -344,43 +344,20 @@ def sync_dataset_orgunits(
                         f"Exception lors de la suppression de l'orgUnit {ou} de '{endpoint}': {e!s}"
                     )
 
-    # Batch add missing org units in a single PATCH where possible
     if to_add:
-        try:
-            payload = {"organisationUnits": [{"id": ou} for ou in sorted(to_add)]}
-            res = dedop.api.session.patch(
-                url=f"{dedop.api.url}/dataSets/{dataset_id}", json=payload
-            )
-            status = getattr(res, "status_code", None)
-            if status in (200, 201):
-                current_run.log_info(
-                    f"Ajout en lot de {len(to_add)} orgUnits au DataSet {dataset_id} "
-                    f"(status={status})."
-                )
-                existing_ids_dedop.update(to_add)
-            else:
-                body = getattr(res, "text", "")
-                current_run.log_warning(
-                    f"PATCH en lot échoué (status={status}). \nTentative d'ajout unitaire."
-                )
-                # Fallback to individual POSTs if bulk fails
-                for ou in sorted(to_add):
-                    endpoint = f"dataSets/{dataset_id}/organisationUnits/{ou}"
-                    try:
-                        res_i = dedop.api.post(endpoint=endpoint)
-                        status_i = getattr(res_i, "status_code", None)
-                        if status_i in (200, 201):
-                            existing_ids_dedop.add(ou)
-                        elif status_i == 409:
-                            existing_ids_dedop.add(ou)
-                        else:
-                            current_run.log_error(f"Échec ajout orgUnit {ou} (status={status_i}).")
-                    except Exception as e:
-                        current_run.log_error(f"Exception lors de l'ajout de l'orgUnit {ou}: {e!s}")
-        except Exception as e:
-            current_run.log_error(
-                f"Exception lors du PATCH en lot des orgUnits pour le DataSet {dataset_id}: {e!s}"
-            )
+        for ou in sorted(to_add):
+            endpoint = f"dataSets/{dataset_id}/organisationUnits/{ou}"
+            try:
+                res_i = dedop.api.post(endpoint=endpoint)
+                status_i = getattr(res_i, "status_code", None)
+                if status_i in (200, 201):
+                    existing_ids_dedop.add(ou)
+                elif status_i == 409:
+                    existing_ids_dedop.add(ou)
+                else:
+                    current_run.log_error(f"Échec ajout orgUnit {ou} (status={status_i}).")
+            except Exception as e:
+                current_run.log_error(f"Exception lors de l'ajout de l'orgUnit {ou}: {e!s}")
 
     # Return final reconciled set
     return

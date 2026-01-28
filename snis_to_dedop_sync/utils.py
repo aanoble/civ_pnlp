@@ -41,8 +41,12 @@ def last_analytics_update(dhis2: DHIS2) -> datetime | None:
         The last update date of the analytics tables. Returns None if the analytics tables have
         never been updated.
     """
-    dtime_str = dhis2.meta.system_info().get("lastAnalyticsTableSuccess")
-    return datetime.fromisoformat(dtime_str) if dtime_str else None
+    try:
+        dtime_str = dhis2.meta.system_info().get("lastAnalyticsTableSuccess")
+        return datetime.fromisoformat(dtime_str) if dtime_str else None
+    except Exception as e:
+        current_run.log_error(f"Error retrieving last analytics update: {e!s}")
+        return None
 
 
 def parse_cutoff_date(date_str: str) -> datetime:
