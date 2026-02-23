@@ -1,5 +1,5 @@
 [project]
-name = "openhexa-nmdr-pipelines"
+name = "nmdr-pipelines"
 version = "0.1.0"
 description = "OpenHEXA pipelines for nmdr civ"
 readme = "README.md"

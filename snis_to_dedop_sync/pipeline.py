@@ -464,11 +464,18 @@ def fetch_dhis2_data(
                 include_children=True,
             )
         else:
-            last_updated_str = (
-                last_updated.strftime("%Y-%m-%d")
-                if last_updated
-                else datetime.now().strftime("%Y-%m-%d")
-            )
+            dt_now = datetime.now()
+            month_end_day = (dt_now + relativedelta(day=31)).day
+            is_scheduled_midnight = dt_now.day in (1, 15, month_end_day) and dt_now.hour == 0
+
+            if last_updated:
+                last_updated_str = last_updated.strftime("%Y-%m-%d")
+            elif is_scheduled_midnight:
+                last_updated_str = (dt_now.replace(day=1) - relativedelta(months=1)).strftime(
+                    "%Y-%m-%d"
+                )
+            else:
+                last_updated_str = dt_now.strftime("%Y-%m-%d")
             current_run.log_info(
                 f"Extraction des données en mode automatisé avec "
                 f"la date de dernière mise à jour: {last_updated_str}"
@@ -729,12 +736,10 @@ def write_import_report(output_dir: Path, payload: list[dict], summary: dict) ->
         current_run.log_info("Aucun enregistrement à écrire dans le rapport d'import.")
         return
 
-    output_dir = Path(
-        workspace.files_path,
-        output_dir,
-        datetime.now(tz=UTC).strftime("%Y-%m-%d_%H-%M-%S"),
-    )
-    output_dir.parent.mkdir(parents=True, exist_ok=True)
+    base_output_dir = Path(workspace.files_path) / output_dir
+    base_output_dir.mkdir(parents=True, exist_ok=True)
+
+    output_dir = base_output_dir / datetime.now(tz=UTC).strftime("%Y-%m-%d_%H-%M-%S_%f")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     payload_fp = output_dir / "payload.json"
@@ -764,12 +769,18 @@ def cleanup_old_directory_files(output_dir: Path, _write: None, retention_days: 
         _write: Paramètre factice pour la chronologie
         retention_days: Nombre de jours à conserver
     """
-    output_dir = Path(workspace.files_path, output_dir)
+    output_dir = Path(workspace.files_path) / output_dir
+    if not output_dir.exists():
+        return
+
     now = datetime.now()
     for item in output_dir.iterdir():
         if item.is_dir():
             try:
-                folder_time = datetime.strptime(item.name, "%Y-%m-%d_%H-%M-%S")
+                try:
+                    folder_time = datetime.strptime(item.name, "%Y-%m-%d_%H-%M-%S_%f")
+                except ValueError:
+                    folder_time = datetime.strptime(item.name, "%Y-%m-%d_%H-%M-%S")
                 if (now - folder_time).days >= retention_days:
                     for sub_item in item.iterdir():
                         sub_item.unlink()
