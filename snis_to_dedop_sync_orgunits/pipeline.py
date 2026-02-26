@@ -325,7 +325,7 @@ def push_data_to_dhis2(
     request_params = {"dryRun": dry_run, "importStrategy": import_mode}
     max_retries = 2
     backoff_base = 1.0
-    url = dhis2.api.url + "/metadata"
+    url = dhis2.api.url + "/metadata.json"
 
     for idx, chunk in enumerate(_chunks(payload, post_batch_size), start=1):
         import_counts = {"imported": 0, "updated": 0, "ignored": 0, "deleted": 0}
