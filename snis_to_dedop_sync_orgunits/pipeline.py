@@ -382,7 +382,7 @@ def push_data_to_dhis2(
 
         chunk_summary = resp_data.get("response", resp_data)
         if "importCount" in chunk_summary:
-            ic = chunk_summary.get("importCount", {})
+            ic = chunk_summary.get("stats", {})
             import_counts["ignored"] = ic.get("ignored", 0)
             import_counts["imported"] = ic.get("imported", 0)
             import_counts["updated"] = ic.get("updated", 0)
