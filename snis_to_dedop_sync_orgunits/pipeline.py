@@ -173,9 +173,16 @@ def prepare_organisation_units(
     # Orgunit to close in Dedop
     ids_to_close = sorted(dedop_ids - snis_ids)
     if ids_to_close:
-        current_run.log_info(f"{len(ids_to_close)} organisation units to close in Dedop")
-        for ou_id in ids_to_close:
-            payload.append(_build_orgunit_payload(dedop_by_id[ou_id], closing=True))
+        ids_to_close_pending = [
+            ou_id for ou_id in ids_to_close if not dedop_by_id[ou_id].get("closedDate")
+        ]
+        if ids_to_close_pending:
+            current_run.log_info(
+                f"{len(ids_to_close_pending)} organisation units to close in Dedop "
+                f"(out of {len(ids_to_close)} missing from source)"
+            )
+            for ou_id in ids_to_close_pending:
+                payload.append(_build_orgunit_payload(dedop_by_id[ou_id], closing=True))
 
     # Orgunit to create in Dedop
     ids_to_create = sorted(snis_ids - dedop_ids)
