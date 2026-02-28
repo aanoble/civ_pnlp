@@ -466,11 +466,11 @@ def fetch_dhis2_data(
         else:
             dt_now = datetime.now()
             month_end_day = (dt_now + relativedelta(day=31)).day
-            is_scheduled_midnight = dt_now.day in (1, 15, month_end_day) and dt_now.hour == 0
+            is_scheduled_at = dt_now.day in (1, 15, month_end_day) and dt_now.hour in (6, 18)
 
             if last_updated:
                 last_updated_str = last_updated.strftime("%Y-%m-%d")
-            elif is_scheduled_midnight:
+            elif is_scheduled_at:
                 last_updated_str = (dt_now.replace(day=1) - relativedelta(months=1)).strftime(
                     "%Y-%m-%d"
                 )
@@ -718,7 +718,8 @@ def push_data_to_dhis2(
     total_success = aggregated["totals"]["imported"] + aggregated["totals"]["updated"]
     aggregated["imported"] = total_success
     current_run.log_info(
-        f"Imported {total_success}/{total} data values to DHIS2 (strategy={import_mode})"
+        f"Imported {total_success}/{total} data values to DHIS2 for dataSet ID `{dataset_id}`"
+        f" (strategy={import_mode})"
     )
     return aggregated  # type: ignore
 
