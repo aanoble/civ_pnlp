@@ -666,7 +666,8 @@ def push_data_to_dhis2(
                 {"index": idx, "size": len(chunk), "summary": {}, "status": "failed"}
             )
             current_run.log_error(
-                f"Error importing chunk {idx}: no response from DHIS2 (strategy={import_mode})"
+                f"Error importing for dataset {dataset_id} chunk {idx}: no response from DHIS2 "
+                f"(strategy={import_mode})"
             )
             continue
 
@@ -680,7 +681,8 @@ def push_data_to_dhis2(
                 {"index": idx, "size": len(chunk), "summary": resp_data, "status": "failed"}
             )
             current_run.log_error(
-                f"Error importing chunk {idx}: {response.text} (strategy={import_mode})"
+                f"Error importing for dataset {dataset_id} chunk {idx}: {response.text} "
+                f"(strategy={import_mode})"
             )
             continue
 
@@ -694,8 +696,11 @@ def push_data_to_dhis2(
 
         for conflict in chunk_summary.get("conflicts", []) or []:
             current_run.log_warning(
-                "Conflict in chunk {i}: {obj} - {val}".format(
-                    i=idx, obj=conflict.get("object", ""), val=conflict.get("value", "")
+                "Conflict in dataset {dataset_id} chunk {i}: {obj} - {val}".format(
+                    dataset_id=dataset_id,
+                    i=idx,
+                    obj=conflict.get("object", ""),
+                    val=conflict.get("value", ""),
                 )
             )
             issues.append(conflict)
