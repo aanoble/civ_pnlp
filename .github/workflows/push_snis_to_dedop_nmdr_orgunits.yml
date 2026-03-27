@@ -1,0 +1,34 @@
+name: Push snis_to_nmdr_sync_orgunits
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/push_snis_to_nmdr_sync_orgunits.yaml"
+      - "snis_to_nmdr_sync_orgunits/**"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - uses: actions/setup-python@v2
+        with:
+          python-version: "3.11"
+
+      - name: Configure OpenHEXA CLI
+        uses: blsq/openhexa-cli-action@v1
+        with:
+          workspace: "nmdr-civ"
+          token: ${{ secrets.OH_TOKEN }}
+      - name: Push pipeline to OpenHEXA
+        run: |
+          openhexa pipelines push snis_to_nmdr_sync_orgunits \
+            --code "snis-to-nmdr-sync-orgunits" \
+            --description "${{ github.event.head_commit.message }}" \
+            --link "https://github.com/aanoble/civ_pnlp/commit/${{ github.sha }}" \
+            --yes
