@@ -86,6 +86,18 @@ class SyncPlan(TypedDict):
     required=True,
 )
 @parameter(
+    "import_mode",
+    type=str,  # type: ignore
+    name="Import mode",
+    help=(
+        "The import strategy to use when pushing data to Nmdr. "
+        "Can be 'CREATE', 'UPDATE' or 'CREATE_AND_UPDATE'."
+    ),
+    default="CREATE_AND_UPDATE",
+    required=False,
+    choices=["CREATE", "UPDATE", "CREATE_AND_UPDATE"],
+)
+@parameter(
     "sync_existing_geometries",
     type=bool,  # type: ignore
     name="Synchroniser les geometries existantes",
@@ -100,18 +112,6 @@ class SyncPlan(TypedDict):
     help="If True, the pipeline will run in dry-run mode and will not write any data to Nmdr.",
     default=False,
     required=False,
-)
-@parameter(
-    "import_mode",
-    type=str,  # type: ignore
-    name="Import mode",
-    help=(
-        "The import strategy to use when pushing data to Nmdr. "
-        "Can be 'CREATE', 'UPDATE' or 'CREATE_AND_UPDATE'."
-    ),
-    default="CREATE_AND_UPDATE",
-    required=False,
-    choices=["CREATE", "UPDATE", "CREATE_AND_UPDATE"],
 )
 def snis_to_nmdr_sync_orgunits(
     snis_connection: DHIS2Connection,
