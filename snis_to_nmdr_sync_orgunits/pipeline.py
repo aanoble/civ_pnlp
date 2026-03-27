@@ -70,7 +70,7 @@ class SyncPlan(TypedDict):
     required=True,
 )
 @parameter(
-    "dedop_connection",
+    "nmdr_connection",
     type=DHIS2Connection,  # type: ignore
     name="DHIS2 Connection for NMDR",
     help="DHIS2 connection to fetch NMDR data from.",
@@ -115,7 +115,7 @@ class SyncPlan(TypedDict):
 )
 def snis_to_nmdr_sync_orgunits(
     snis_connection: DHIS2Connection,
-    dedop_connection: DHIS2Connection,
+    nmdr_connection: DHIS2Connection,
     output_directory: str,
     sync_existing_geometries: bool,
     dry_run: bool = False,
@@ -124,15 +124,15 @@ def snis_to_nmdr_sync_orgunits(
 ):
     """Pipeline to sync organisation units from SNIS to Nmdr."""
     snis = DHIS2(connection=snis_connection)
-    nmdr = DHIS2(connection=dedop_connection)
+    nmdr = DHIS2(connection=nmdr_connection)
 
     check_server_health(snis)
     check_server_health(nmdr)
 
     ou_snis = fetch_org_units(snis)
-    ou_dedop = fetch_org_units(nmdr)
+    ou_nmdr = fetch_org_units(nmdr)
 
-    sync_plan = build_sync_plan(ou_snis, ou_dedop, sync_existing_geometries)
+    sync_plan = build_sync_plan(ou_snis, ou_nmdr, sync_existing_geometries)
     orgunit_payload = build_orgunit_payload(sync_plan)
     import_summary = push_data_to_dhis2(
         nmdr, orgunit_payload, dry_run, import_mode, post_batch_size
@@ -174,7 +174,7 @@ def fetch_org_units(dhis2: DHIS2) -> pl.DataFrame:
 
 @snis_to_nmdr_sync_orgunits.task
 def build_sync_plan(
-    ou_snis: pl.DataFrame, ou_dedop: pl.DataFrame, sync_existing_geometries: bool
+    ou_snis: pl.DataFrame, ou_nmdr: pl.DataFrame, sync_existing_geometries: bool
 ) -> SyncPlan:
     """Compare source and target org units and build a structured sync plan.
 
@@ -182,7 +182,7 @@ def build_sync_plan(
     ----------
     ou_snis : pl.DataFrame
         DataFrame containing SNIS organisation units.
-    ou_dedop : pl.DataFrame
+    ou_nmdr : pl.DataFrame
         DataFrame containing Nmdr organisation units.
     sync_existing_geometries : bool
         Whether to sync existing geometries.
@@ -193,13 +193,13 @@ def build_sync_plan(
         Structured plan for synchronising organisation units.
     """
     current_run.log_info(
-        f"Comparing {len(ou_snis)} SNIS org units with {len(ou_dedop)} Nmdr org units..."
+        f"Comparing {len(ou_snis)} SNIS org units with {len(ou_nmdr)} Nmdr org units..."
     )
     snis_by_id = {row["id"]: row for row in ou_snis.iter_rows(named=True)}
-    dedop_by_id = {row["id"]: row for row in ou_dedop.iter_rows(named=True)}
+    nmdr_by_id = {row["id"]: row for row in ou_nmdr.iter_rows(named=True)}
 
     snis_ids = set(snis_by_id)
-    dedop_ids = set(dedop_by_id)
+    nmdr_ids = set(nmdr_by_id)
 
     actions: dict[str, list[str]] = {
         "create": [],
@@ -211,24 +211,24 @@ def build_sync_plan(
     }
     payload_by_id: dict[str, dict[str, Any]] = {}
 
-    for ou_id in sorted(dedop_ids - snis_ids):
-        if dedop_by_id[ou_id].get("closedDate"):
+    for ou_id in sorted(nmdr_ids - snis_ids):
+        if nmdr_by_id[ou_id].get("closedDate"):
             actions["already_closed"].append(ou_id)
             continue
 
         actions["close"].append(ou_id)
-        payload_by_id[ou_id] = _build_orgunit_payload(dedop_by_id[ou_id], closing=True)
+        payload_by_id[ou_id] = _build_orgunit_payload(nmdr_by_id[ou_id], closing=True)
 
-    for ou_id in sorted(snis_ids - dedop_ids):
+    for ou_id in sorted(snis_ids - nmdr_ids):
         actions["create"].append(ou_id)
         payload_by_id[ou_id] = _build_orgunit_payload(
             snis_by_id[ou_id],
             include_geometry=True,
         )
 
-    for ou_id in sorted(snis_ids & dedop_ids):
+    for ou_id in sorted(snis_ids & nmdr_ids):
         source_ou = snis_by_id[ou_id]
-        target_ou = dedop_by_id[ou_id]
+        target_ou = nmdr_by_id[ou_id]
 
         core_changed = _core_signature(source_ou) != _core_signature(target_ou)
         geometry_changed = sync_existing_geometries and _geometry_signature(
@@ -251,10 +251,10 @@ def build_sync_plan(
     comparison_summary = {
         "sync_existing_geometries": sync_existing_geometries,
         "source_total": len(ou_snis),
-        "target_total": len(ou_dedop),
-        "common_ids": len(snis_ids & dedop_ids),
+        "target_total": len(ou_nmdr),
+        "common_ids": len(snis_ids & nmdr_ids),
         "missing_from_target": len(actions["create"]),
-        "missing_from_source": len(dedop_ids - snis_ids),
+        "missing_from_source": len(nmdr_ids - snis_ids),
         "to_create": len(actions["create"]),
         "to_close": len(actions["close"]),
         "already_closed": len(actions["already_closed"]),
