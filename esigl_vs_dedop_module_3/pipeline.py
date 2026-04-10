@@ -462,7 +462,7 @@ def fetch_dhis2_data(
             include_children=True,
             periods=periods_range,  # type: ignore
         )
-        df_data_ddp = dhis2.meta.add_coc_name_column(df_data_ddp, "category_option_combo_id")
+        # df_data_ddp = dhis2.meta.add_coc_name_column(df_data_ddp, "category_option_combo_id")
         df_data_ddp = df_data_ddp.with_columns(
             pl.col("value").cast(pl.Float64).cast(pl.Int64),
         )  # type: ignore
@@ -828,6 +828,7 @@ def compare_esigl_dedop(
     )
     df_merged = dhis2.meta.add_dx_name_column(df_merged, "data_element_id")
     df_merged = dhis2.meta.add_org_unit_name_column(df_merged, "organisation_unit_id")
+    df_merged = dhis2.meta.add_coc_name_column(df_merged, "category_option_combo_id")
 
     df_merged = df_merged.rename({"value": "value_esigl"})
 
