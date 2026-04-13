@@ -254,9 +254,9 @@ def fetch_organisation_units(dedop: DHIS2) -> pl.DataFrame:
             # Extraire directement les coordonnées du MultiPolygon
             pl.col("geometry")
             .map_elements(
-                lambda geom: eval(geom)["coordinates"][0][0]
-                if isinstance(eval(geom), dict)
-                else None,
+                lambda geom: (
+                    eval(geom)["coordinates"][0][0] if isinstance(eval(geom), dict) else None
+                ),
                 return_dtype=pl.Object,
             )
             .alias("coordinates")
@@ -343,7 +343,9 @@ def fetch_routine_data_elements(dhis2: DHIS2) -> pl.DataFrame:
     Returns:
         DataFrame des dataElements de routine
     """
-    df_de = pl.DataFrame(dhis2.meta.data_elements(fields="id,name,code,categoryCombo"))
+    df_de = pl.DataFrame(
+        dhis2.meta.data_elements(fields="id,name,code,categoryCombo"), infer_schema_length=100000
+    )
     df_de = df_de.filter(
         pl.col("code").is_not_null()
         & pl.col("categoryCombo").struct.field("id").str.contains("El9O9wWhg8F")
