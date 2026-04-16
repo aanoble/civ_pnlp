@@ -31,7 +31,7 @@ from utils import (
 )
 
 
-@pipeline("snis_vs_dedop_module_1")
+@pipeline("snis_vs_dedop_module_1", timeout=18000)
 @parameter(
     "snis_connection",
     type=DHIS2Connection,  # type: ignore
