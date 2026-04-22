@@ -370,7 +370,7 @@ def _extract_import_counts(
 
     counts: OrgUnitCounts = {
         "ignored": int(raw_counts.get("ignored", 0)) if isinstance(raw_counts, Mapping) else 0,
-        "imported": int(raw_counts.get("imported", 0)) if isinstance(raw_counts, Mapping) else 0,
+        "imported": int(raw_counts.get("created", 0)) if isinstance(raw_counts, Mapping) else 0,
         "updated": int(raw_counts.get("updated", 0)) if isinstance(raw_counts, Mapping) else 0,
         "deleted": int(raw_counts.get("deleted", 0)) if isinstance(raw_counts, Mapping) else 0,
     }
@@ -561,12 +561,12 @@ def push_data_to_dhis2(
     aggregated["imported"] = total_success
     current_run.log_info(
         "Import summary: payload={payload}, chunks_success={success}, chunks_failed={failed}, "
-        "imported={imported}, updated={updated}, ignored={ignored}, deleted={deleted}, "
+        "created={created}, updated={updated}, ignored={ignored}, deleted={deleted}, "
         "conflicts={conflicts}".format(
             payload=total,
             success=aggregated["successful_chunks"],
             failed=aggregated["failed_chunks"],
-            imported=aggregated["totals"]["imported"],
+            created=aggregated["totals"]["imported"],
             updated=aggregated["totals"]["updated"],
             ignored=aggregated["totals"]["ignored"],
             deleted=aggregated["totals"]["deleted"],
