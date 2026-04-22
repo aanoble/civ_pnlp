@@ -100,8 +100,11 @@ class SyncPlan(TypedDict):
 @parameter(
     "sync_existing_geometries",
     type=bool,  # type: ignore
-    name="Synchroniser les geometries existantes",
-    help="Mettre a jour les geometries des org units deja presentes dans Nmdr",
+    name="Sync existing geometries in case of differences",
+    help=(
+        "Update the geometries of organisation units that already exist in NMDR "
+        "if they are different from those in SNIS"
+    ),
     default=True,
     required=False,
 )
