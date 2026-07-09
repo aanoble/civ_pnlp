@@ -11,5 +11,6 @@ DATASET_IDS = [
     "m4UgyqVtRAU",  # VII. Equipements techniques B et C
     "x6z1nTTPhox",  # Rapport Mensuel des Activités Communautaires du Centre de Santé
     "QK0yVoh1vgo",  # PEV - Vaccination de routine et gestion de stock
+    "XP2D4NSn6aU",  # "PEV - Population Mensuelle"
     "yxqXBPg05Z8",  # Activités de Renforcement de la Vaccination de Routine
 ]

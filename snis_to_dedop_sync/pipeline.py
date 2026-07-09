@@ -71,6 +71,8 @@ from utils import (
     "extraction_root_org_unit",
     type=str,  # type: ignore
     name="Extraction root org unit",
+    widget=DHIS2Widget.ORG_UNITS,
+    connection="target_connection",  # type: ignore
     help=(
         "Root organisation unit used for extraction (children included). Extracting from a "
         "high-level root is faster than unit-by-unit; a post-filter is applied afterwards."
@@ -471,7 +473,7 @@ def sync_dataset_orgunits(
     if to_delete and not allow_deletions:
         current_run.log_info(
             f"{len(to_delete)} orgUnit(s) présents dans l'instance cible mais absents de "
-            f"l'instance source pour le dataset {dataset_id} — désassignation désactivée "
+            f"l'instance source pour le dataset {dataset_id} - désassignation désactivée "
             f"(allow_deletions=False)."
         )
     elif to_delete and allow_deletions:
@@ -553,7 +555,7 @@ def ensure_disaggregation_metadata(
     if only_source:
         current_run.log_warning(
             f"{len(only_source)} dataElement(s) présents dans l'instance source mais absents "
-            f"du dataset {dataset_id} de l'instance cible — ignorés."
+            f"du dataset {dataset_id} de l'instance cible - ignorés."
         )
 
     coc_source = get_data_element_cocs(source, common)
@@ -575,7 +577,7 @@ def ensure_disaggregation_metadata(
         else:
             current_run.log_warning(
                 f"{len(missing_coc_ids)} categoryOptionCombo(s) manquants dans l'instance cible "
-                f"pour le dataset {dataset_id} — valeurs correspondantes ignorées "
+                f"pour le dataset {dataset_id} - valeurs correspondantes ignorées "
                 f"(create_missing_metadata={create_missing_metadata}, dry_run={dry_run})."
             )
 

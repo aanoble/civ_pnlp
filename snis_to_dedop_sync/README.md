@@ -1,9 +1,8 @@
-# Synchronisation des dataValues — instance source → instance cible
+# Synchronisation des dataValues - instance source → instance cible
 
 Pipeline OpenHEXA synchronisant les `dataValues` d'une **instance source** vers une **instance
 cible** à partir des datasets. Par défaut, la source est l'instance SNIS (`snis-dhis2`) et la
 cible l'instance DEDOP/NMDR (`dhis2-nmdr-temp`).
-Voir [`PLAN_AMELIORATION.md`](./PLAN_AMELIORATION.md) pour le détail des choix de conception.
 
 ## Hypothèses
 
@@ -35,13 +34,13 @@ moins un dataset a échoué.
 |-----------|------|--------|-------------|
 | `source_connection` / `target_connection` | DHIS2Connection | `snis-dhis2` / `dhis2-nmdr-temp` | Connexions source / cible |
 | `dataset_id` | list[str] | tous (`DATASET_IDS`) | Datasets à synchroniser |
-| `org_unit_id` | list[str] | — | **Post-filtre** optionnel sur les org units |
-| `extraction_root_org_unit` | str | `ZD44Asc0bAk` | Racine d'extraction (enfants inclus) — choix de performance |
-| `start_date` / `end_date` | str | — | Fenêtre d'extraction (YYYY-MM-DD) |
+| `org_unit_id` | list[str] | - | **Post-filtre** optionnel sur les org units |
+| `extraction_root_org_unit` | str | `ZD44Asc0bAk` | Racine d'extraction (enfants inclus) - choix de performance |
+| `start_date` / `end_date` | str | - | Fenêtre d'extraction (YYYY-MM-DD) |
 | `months_back` | int | 24 | Recul en mois (appliqué **seulement** si `start_date` absente) |
-| `last_updated` | str | — | Cutoff `lastUpdated` (backfill manuel) |
+| `last_updated` | str | - | Cutoff `lastUpdated` (backfill manuel) |
 | `target_aoc` | str | `HllvX50cXC0` | **AOC de l'instance cible** appliqué à toutes les valeurs |
-| `create_missing_metadata` | bool | `False` | Créer les COC manquants dans la cible (UID préservés) — sinon ignorés + reportés |
+| `create_missing_metadata` | bool | `False` | Créer les COC manquants dans la cible (UID préservés) - sinon ignorés + reportés |
 | `sync_orgunit_deletions` | bool | `False` | Autoriser la désassignation d'org units (destructif) |
 | `automate_sync` | bool | `False` | Mode quotidien incrémental (`lastUpdated` = aujourd'hui) |
 | `dry_run` | bool | `False` | Simuler sans écrire (import + création de métadonnées) |
@@ -66,9 +65,3 @@ moins un dataset a échoué.
 
 Par dataset et par run : `payload.json` (upserts + deletes) et `report.json` (résumé d'import,
 compteurs, rapport métadonnées).
-
-## Tests
-
-```bash
-pytest snis_to_dedop_sync/tests
-```
