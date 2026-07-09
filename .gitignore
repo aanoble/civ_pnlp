@@ -186,4 +186,4 @@ notebooks/
 .DS_Store
 
 # Plan d'amélioration
-./snis_to_dedop_sync/PLAN_AMELIORATION.md
+/snis_to_dedop_sync/PLAN_AMELIORATION.md

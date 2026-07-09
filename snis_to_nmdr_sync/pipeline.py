@@ -31,7 +31,7 @@ from utils import (
 )
 
 
-@pipeline("snis_to_dedop_sync", timeout=43200)
+@pipeline("snis_to_nmdr_sync", timeout=43200)
 @parameter(
     "source_connection",
     type=DHIS2Connection,  # type: ignore
@@ -195,7 +195,7 @@ from utils import (
     default=30,
     required=False,
 )
-def snis_to_dedop_sync(
+def snis_to_nmdr_sync(
     source_connection: DHIS2Connection,
     target_connection: DHIS2Connection,
     dataset_id: list[str] | None,
@@ -372,7 +372,7 @@ def snis_to_dedop_sync(
         )
 
 
-@snis_to_dedop_sync.task
+@snis_to_nmdr_sync.task
 def process_periods(
     start_date: str | None,
     end_date: str | None,
@@ -422,7 +422,7 @@ def process_periods(
     return [start_dt, end_dt]
 
 
-@snis_to_dedop_sync.task
+@snis_to_nmdr_sync.task
 def sync_dataset_orgunits(
     source: DHIS2,
     target: DHIS2,
@@ -514,7 +514,7 @@ def sync_dataset_orgunits(
             current_run.log_error(f"Exception assignation orgUnit {ou}: {e!s}")
 
 
-@snis_to_dedop_sync.task
+@snis_to_nmdr_sync.task
 def ensure_disaggregation_metadata(
     source: DHIS2,
     target: DHIS2,
@@ -589,7 +589,7 @@ def ensure_disaggregation_metadata(
     }
 
 
-@snis_to_dedop_sync.task
+@snis_to_nmdr_sync.task
 def fetch_dhis2_data(
     source: DHIS2,
     dataset_id: str,
@@ -705,7 +705,7 @@ def fetch_dhis2_data(
     return data
 
 
-@snis_to_dedop_sync.task
+@snis_to_nmdr_sync.task
 def convert_periods(
     source: DHIS2, target: DHIS2, dataset_id: str, df: pl.DataFrame
 ) -> pl.DataFrame:
@@ -792,7 +792,7 @@ def convert_periods(
     )
 
 
-@snis_to_dedop_sync.task
+@snis_to_nmdr_sync.task
 def prepare_data_for_dhis2(df: pl.DataFrame, target_aoc: str) -> dict:
     """Prepare upsert and delete payloads for DHIS2.
 
@@ -853,7 +853,7 @@ def prepare_data_for_dhis2(df: pl.DataFrame, target_aoc: str) -> dict:
     return {"upserts": upserts, "deletes": deletes}
 
 
-@snis_to_dedop_sync.task
+@snis_to_nmdr_sync.task
 def push_data_to_dhis2(
     dhis2: DHIS2,
     prepared: dict,
@@ -933,7 +933,7 @@ def push_data_to_dhis2(
     return aggregated
 
 
-@snis_to_dedop_sync.task
+@snis_to_nmdr_sync.task
 def write_import_report(
     output_dir: Path, prepared: dict, summary: dict, metadata_report: dict
 ) -> None:
@@ -977,7 +977,7 @@ def write_import_report(
     current_run.add_file_output(report_fp.as_posix())
 
 
-@snis_to_dedop_sync.task
+@snis_to_nmdr_sync.task
 def raise_on_push_failure(summary: dict, dataset_id: str) -> None:
     """Raise if the push summary reports a hard failure.
 
@@ -992,7 +992,7 @@ def raise_on_push_failure(summary: dict, dataset_id: str) -> None:
         raise RuntimeError(f"Échec d'import DHIS2 pour le dataset `{dataset_id}`.")
 
 
-@snis_to_dedop_sync.task
+@snis_to_nmdr_sync.task
 def cleanup_old_directory_files(output_dir: Path, _write: None, retention_days: int = 30) -> None:
     """Delete report directories older than ``retention_days``.
 
@@ -1317,4 +1317,4 @@ def _push_chunks(
 
 
 if __name__ == "__main__":
-    snis_to_dedop_sync()
+    snis_to_nmdr_sync()
