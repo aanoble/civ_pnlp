@@ -1,4 +1,7 @@
-"""Template for newly generated pipelines."""
+"""Pipeline de synchronisation des dataValues du SNIS vers DEDOP.
+
+Voir `PLAN_AMELIORATION.md` pour le détail des choix de conception.
+"""
 
 import json
 import time
@@ -7,7 +10,6 @@ from pathlib import Path
 
 import polars as pl
 from constants import DATASET_IDS
-from dateutil import rrule
 from dateutil.relativedelta import relativedelta
 from openhexa.sdk import (
     DHIS2Connection,
@@ -17,8 +19,16 @@ from openhexa.sdk import (
     workspace,
 )
 from openhexa.sdk.pipelines.parameter import DHIS2Widget
-from openhexa.toolbox.dhis2 import DHIS2, dataframe
-from utils import check_server_health, last_analytics_update, parse_cutoff_date, validate_dataset
+from openhexa.toolbox.dhis2 import DHIS2
+from utils import (
+    check_server_health,
+    convert_period_id,
+    get_data_element_cocs,
+    last_analytics_update,
+    parse_cutoff_date,
+    validate_aoc_exists,
+    validate_dataset,
+)
 
 
 @pipeline("snis_to_dedop_sync", timeout=43200)
@@ -34,7 +44,7 @@ from utils import check_server_health, last_analytics_update, parse_cutoff_date,
     "dedop_connection",
     type=DHIS2Connection,  # type: ignore
     name="DHIS2 Connection for Dedop",
-    help="DHIS2 connection to fetch Dedop data from.",
+    help="DHIS2 connection to push Dedop data to.",
     default="dhis2-nmdr-temp",
     required=True,
 )
@@ -53,28 +63,40 @@ from utils import check_server_health, last_analytics_update, parse_cutoff_date,
     widget=DHIS2Widget.ORG_UNITS,
     connection="dedop_connection",  # type: ignore
     name="Organisation Unit ID in Dedop",
+    help="Optional post-filter on organisation units (subset of the extraction root).",
     required=False,
     multiple=True,
+)
+@parameter(
+    "extraction_root_org_unit",
+    type=str,  # type: ignore
+    name="Extraction root org unit",
+    help=(
+        "Root organisation unit used for extraction (children included). Extracting from a "
+        "high-level root is faster than unit-by-unit; a post-filter is applied afterwards."
+    ),
+    default="ZD44Asc0bAk",
+    required=True,
 )
 @parameter(
     code="start_date",
     type=str,  # type: ignore
     name="Start date (YYYY-MM-DD)",
-    help="Start date for DHIS2 extraction (default today)",
+    help="Start date for DHIS2 extraction (default today).",
     required=False,
 )
 @parameter(
     code="end_date",
     type=str,  # type: ignore
     name="End date (YYYY-MM-DD)",
-    help=("End date for the extraction (default last day of start date)."),
+    help="End date for the extraction (default last day of start date month).",
     required=False,
 )
 @parameter(
     "months_back",
     type=int,  # type: ignore
     name="Historical period in months to refresh",
-    help="Number of months to look back from current month to refresh",
+    help="Number of months to look back from current month (only when start date is empty).",
     default=24,
     required=False,
 )
@@ -82,30 +104,52 @@ from utils import check_server_health, last_analytics_update, parse_cutoff_date,
     "last_updated",
     type=str,  # type: ignore
     name="Last updated date (YYYY-MM-DD)",
-    help="Only fetch records updated since this date from SNIS",
+    help="Only fetch records updated since this date (manual backfill).",
     required=False,
 )
 @parameter(
     "output_directory",
     type=str,  # type: ignore
     name="Output directory",
-    help="Directory to save the output files",
+    help="Directory to save the output files.",
     default="sync SNIS DEDOP/data/output",
     required=True,
 )
 @parameter(
-    "dhis2_aoc",
+    "dedop_target_aoc",
     type=str,  # type: ignore
-    name="DHIS2 attribute option combo",
-    help="DHIS2 attribute option combo",
+    name="DEDOP target attribute option combo",
+    help="Target (DEDOP) attributeOptionCombo applied to every value.",
     default="HllvX50cXC0",
     required=True,
+)
+@parameter(
+    "create_missing_metadata",
+    type=bool,  # type: ignore
+    name="Create missing disaggregation metadata in DEDOP",
+    help=(
+        "If enabled, category options / COCs present in SNIS but missing in DEDOP are created "
+        "in DEDOP (UIDs preserved). If disabled, affected values are skipped and reported."
+    ),
+    default=False,
+    required=False,
+)
+@parameter(
+    "sync_orgunit_deletions",
+    type=bool,  # type: ignore
+    name="Allow org unit deletions from DEDOP datasets",
+    help=(
+        "If enabled, org units present in DEDOP but absent from SNIS are unassigned "
+        "(destructive operation)."
+    ),
+    default=False,
+    required=False,
 )
 @parameter(
     "use_cache",
     type=bool,  # type: ignore
     name="Use API SNIS cache",
-    help="Whether to use cached API responses where possible",
+    help="Whether to use cached API responses where possible.",
     default=False,
     required=False,
 )
@@ -113,38 +157,103 @@ from utils import check_server_health, last_analytics_update, parse_cutoff_date,
     "automate_sync",
     type=bool,  # type: ignore
     name="Automate synchronization",
-    help="Whether to automate the synchronization process using last updated filter",
+    help="Daily incremental mode: fetch records updated today (lastUpdated = today).",
     default=False,
+    required=False,
+)
+@parameter(
+    "dry_run",
+    type=bool,  # type: ignore
+    name="Dry run",
+    help="Simulate the import (and metadata creation) without writing to DEDOP.",
+    default=False,
+    required=False,
+)
+@parameter(
+    "import_mode",
+    type=str,  # type: ignore
+    name="Import strategy",
+    help="DHIS2 import strategy for upserts (CREATE, UPDATE, CREATE_AND_UPDATE).",
+    default="CREATE_AND_UPDATE",
+    required=False,
+)
+@parameter(
+    "post_batch_size",
+    type=int,  # type: ignore
+    name="Post batch size",
+    help="Chunk size for DHIS2 POST requests.",
+    default=5000,
+    required=False,
+)
+@parameter(
+    "retention_days",
+    type=int,  # type: ignore
+    name="Report retention (days)",
+    help="Number of days of import reports to keep.",
+    default=30,
     required=False,
 )
 def snis_to_dedop_sync(
     snis_connection: DHIS2Connection,
     dedop_connection: DHIS2Connection,
-    dataset_id: str,
-    org_unit_id: str,
+    dataset_id: list[str] | None,
+    org_unit_id: list[str] | None,
+    extraction_root_org_unit: str,
     start_date: str | None,
     end_date: str | None,
     months_back: int,
     last_updated: str | None,
     output_directory: str,
-    dhis2_aoc: str,
+    dedop_target_aoc: str,
+    create_missing_metadata: bool,
+    sync_orgunit_deletions: bool,
     automate_sync: bool,
     dry_run: bool = False,
-    use_cache: bool = True,
+    use_cache: bool = False,
     import_mode: str = "CREATE_AND_UPDATE",
     post_batch_size: int = 5000,
+    retention_days: int = 30,
 ):
-    """Pipeline to synchronize data from SNIS DHIS2 to Dedop DHIS2.
+    """Synchronize data values from SNIS DHIS2 to DEDOP DHIS2.
 
-    Parameters.
+    Parameters
     ----------
     snis_connection : DHIS2Connection
         DHIS2 connection to fetch SNIS data from.
     dedop_connection : DHIS2Connection
-        DHIS2 connection to fetch Dedop data from.
-    dataset_id : str
-        Dataset ID in Dedop to synchronize.
-    org_unit_id : str
+        DHIS2 connection to push DEDOP data to.
+    dataset_id : list[str] | None
+        Dataset IDs to synchronize (defaults to the configured DATASET_IDS).
+    org_unit_id : list[str] | None
+        Optional post-filter on organisation units.
+    extraction_root_org_unit : str
+        Root organisation unit for extraction (children included).
+    start_date, end_date : str | None
+        Extraction window bounds (YYYY-MM-DD).
+    months_back : int
+        Months to look back when start_date is empty.
+    last_updated : str | None
+        Manual backfill cutoff (YYYY-MM-DD).
+    output_directory : str
+        Directory for the output reports.
+    dedop_target_aoc : str
+        Target attributeOptionCombo applied to every value.
+    create_missing_metadata : bool
+        Whether to create missing disaggregation metadata in DEDOP.
+    sync_orgunit_deletions : bool
+        Whether to allow destructive org unit unassignment in DEDOP.
+    automate_sync : bool
+        Daily incremental mode (lastUpdated = today).
+    dry_run : bool
+        Simulate without writing.
+    use_cache : bool
+        Use cached SNIS API responses where possible.
+    import_mode : str
+        DHIS2 import strategy for upserts.
+    post_batch_size : int
+        Chunk size for POST requests.
+    retention_days : int
+        Report retention in days.
     """
     snis = (
         DHIS2(connection=snis_connection, cache_dir=Path(workspace.files_path, "snis", ".cache"))
@@ -156,62 +265,107 @@ def snis_to_dedop_sync(
     check_server_health(snis)
     check_server_health(dedop)
 
-    if last_update_snis := last_analytics_update(snis):
-        current_run.log_info(
-            "Dernière mise à jour des tables analytiques SNIS: "
-            f"{last_update_snis.strftime('%Y-%m-%d %H:%M:%S')}"
+    if not validate_aoc_exists(dedop, dedop_target_aoc):
+        raise ValueError(
+            f"L'attributeOptionCombo cible `{dedop_target_aoc}` est introuvable dans DEDOP."
         )
 
+    if last_update_snis := last_analytics_update(snis):
+        current_run.log_info(
+            f"Dernière mise à jour des tables analytiques SNIS: "
+            f"{last_update_snis.strftime('%Y-%m-%d %H:%M:%S')}"
+        )
     if last_update_dedop := last_analytics_update(dedop):
         current_run.log_info(
-            "Dernière mise à jour des tables analytiques DEDOP: "
+            f"Dernière mise à jour des tables analytiques DEDOP: "
             f"{last_update_dedop.strftime('%Y-%m-%d %H:%M:%S')}"
         )
 
     periods_range = process_periods(
         start_date=start_date, end_date=end_date, months_back=months_back
     )
-    last_updated = parse_cutoff_date(last_updated) if last_updated else None  # type: ignore
+    last_updated_dt = parse_cutoff_date(last_updated) if last_updated else None
 
     dataset_ids = list(dataset_id) if dataset_id else DATASET_IDS
     org_unit_ids = list(org_unit_id) if org_unit_id else None
 
-    for dataset_id in dataset_ids:
-        current_run.log_info(f"Traitement du dataset `{dataset_id}`")
+    failed_datasets: list[str] = []
 
-        is_valid = validate_dataset(snis, dataset_id)
-        if not is_valid:
+    for current_dataset_id in dataset_ids:
+        current_run.log_info(f"Traitement du dataset `{current_dataset_id}`")
+
+        valid_snis = validate_dataset(snis, current_dataset_id)
+        valid_dedop = validate_dataset(dedop, current_dataset_id)
+        if not (valid_snis and valid_dedop):
+            failed_datasets.append(current_dataset_id)
             continue
 
-        if not org_unit_ids:
+        try:
             sync_dataset_orgunits(
-                snis=snis, dedop=dedop, dataset_id=dataset_id, org_unit_ids=org_unit_ids
+                snis=snis,
+                dedop=dedop,
+                dataset_id=current_dataset_id,
+                org_unit_ids=org_unit_ids,
+                allow_deletions=sync_orgunit_deletions,
+                dry_run=dry_run,
             )
 
-        data_snis = fetch_dhis2_data(
-            snis=snis,
-            dedop=dedop,
-            dataset_id=dataset_id,
-            org_unit_ids=org_unit_ids,
-            periods_range=periods_range,
-            last_updated=last_updated,
-            automate_sync=automate_sync,
+            metadata_report = ensure_disaggregation_metadata(
+                snis=snis,
+                dedop=dedop,
+                dataset_id=current_dataset_id,
+                create_missing_metadata=create_missing_metadata,
+                dry_run=dry_run,
+            )
+
+            data_snis = fetch_dhis2_data(
+                snis=snis,
+                dataset_id=current_dataset_id,
+                org_unit_ids=org_unit_ids,
+                extraction_root=extraction_root_org_unit,
+                periods_range=periods_range,
+                last_updated=last_updated_dt,
+                automate_sync=automate_sync,
+                use_cache=use_cache,
+                metadata_report=metadata_report,
+            )
+
+            data_snis = convert_periods(
+                snis=snis, dedop=dedop, dataset_id=current_dataset_id, df=data_snis
+            )
+
+            prepared = prepare_data_for_dhis2(df=data_snis, target_aoc=dedop_target_aoc)
+
+            summary = push_data_to_dhis2(
+                dhis2=dedop,
+                prepared=prepared,
+                dataset_id=current_dataset_id,
+                dry_run=dry_run,
+                import_mode=import_mode,
+                post_batch_size=post_batch_size,
+            )
+
+            write = write_import_report(
+                (Path(output_directory) / current_dataset_id),
+                prepared,
+                summary,
+                metadata_report,
+            )
+            cleanup_old_directory_files(
+                (Path(output_directory) / current_dataset_id), write, retention_days
+            )
+
+            raise_on_push_failure(summary, current_dataset_id)
+
+        except Exception as err:
+            current_run.log_error(f"Échec du traitement du dataset `{current_dataset_id}`: {err!s}")
+            failed_datasets.append(current_dataset_id)
+
+    if failed_datasets:
+        raise RuntimeError(
+            f"Synchronisation terminée avec des erreurs sur les datasets: "
+            f"{', '.join(sorted(set(failed_datasets)))}"
         )
-
-        payload = prepare_data_for_dhis2(df=data_snis, dhis2_aoc=dhis2_aoc)
-
-        summary = push_data_to_dhis2(
-            dhis2=dedop,
-            payload=payload,
-            dataset_id=dataset_id,
-            dry_run=dry_run,
-            import_mode=import_mode,
-            post_batch_size=post_batch_size,
-        )
-
-        write = write_import_report((Path(output_directory) / dataset_id), payload, summary)
-
-        cleanup_old_directory_files((Path(output_directory) / dataset_id), write)
 
 
 @snis_to_dedop_sync.task
@@ -220,432 +374,883 @@ def process_periods(
     end_date: str | None,
     months_back: int,
 ) -> list[datetime]:
-    """Traite les périodes selon les dates et le décalage temporel.
+    """Compute the extraction window [start, end].
+
+    ``months_back`` is only applied when ``start_date`` is empty. An explicit ``end_date`` is
+    respected as-is; otherwise the end defaults to the last day of the current month.
 
     Parameters
     ----------
     start_date : str | None
-        Date de début (format YYYY-MM-DD)
+        Start date (YYYY-MM-DD).
     end_date : str | None
-        Date de fin (format YYYY-MM-DD)
+        End date (YYYY-MM-DD).
     months_back : int
-        Nombre de mois à reculer depuis la date de début
+        Months to look back when start_date is empty.
 
     Returns
     -------
-    list[str]
-        Liste contenant [date_début, date_fin] formatées
-
-    Raises
-    ------
-    ValueError
-        Si format date invalide ou incohérence temporelle
+    list[datetime]
+        ``[start, end]`` (or ``[start]`` when both are equal).
     """
     current_run.log_info("Traitement des périodes d'extraction")
 
-    # Conversion et gestion des dates
-    start_dt = parse_cutoff_date(start_date) if start_date else datetime.now()
+    now = datetime.now()
+    start_dt = parse_cutoff_date(start_date) if start_date else now
     if not start_date:
+        if months_back:
+            start_dt = (now - relativedelta(months=months_back)).replace(day=1)
         current_run.log_info(f"Date de début absente, utilisation: {start_dt.strftime('%Y-%m-%d')}")
 
-    end_dt = parse_cutoff_date(end_date) if end_date else start_dt
-    end_dt = end_dt + relativedelta(day=31)
+    end_dt = parse_cutoff_date(end_date) if end_date else (now + relativedelta(day=31))
     if not end_date:
-        current_run.log_info(
-            f"Date de fin absente, utilisation fin de mois: {end_dt.strftime('%Y-%m-%d')}"
-        )
-
-    if months_back:
-        start_dt = start_dt - relativedelta(months=months_back)
-        current_run.log_info(
-            f"Recul de {months_back} mois appliqué: nouvelle date début {start_dt}"
-        )
-
-    if start_dt == end_dt:
-        return [start_dt]
+        current_run.log_info(f"Date de fin absente, utilisation: {end_dt.strftime('%Y-%m-%d')}")
 
     if start_dt > end_dt:
         current_run.log_error(
-            f"Incohérence temporelle: date de début {start_dt.strftime('%Y-%m-%d')} "
-            f"postérieure à date de fin {end_dt.strftime('%Y-%m-%d')}"
+            f"Incohérence temporelle: début {start_dt.strftime('%Y-%m-%d')} "
+            f"postérieur à fin {end_dt.strftime('%Y-%m-%d')}"
         )
         raise ValueError("La date de début doit être antérieure ou égale à la date de fin.")
 
-    dates = list(rrule.rrule(freq=rrule.DAILY, dtstart=start_dt, until=end_dt))
-    return sorted({dt for dt in dates})
+    if start_dt == end_dt:
+        return [start_dt]
+    return [start_dt, end_dt]
 
 
 @snis_to_dedop_sync.task
 def sync_dataset_orgunits(
-    snis: DHIS2, dedop: DHIS2, dataset_id: str, org_unit_ids: list[str] | None
+    snis: DHIS2,
+    dedop: DHIS2,
+    dataset_id: str,
+    org_unit_ids: list[str] | None,
+    allow_deletions: bool,
+    dry_run: bool,
 ) -> None:
-    """Synchronize (add/remove) organisation units for a dataset between SNIS and Dedop.
+    """Synchronize the dataset organisation unit assignments between SNIS and DEDOP.
 
-    Parameters.
+    Org unit *existence* in DEDOP is guaranteed upstream by the daily org unit sync pipeline;
+    this task only reconciles the dataset<->orgUnit assignment. Deletions are destructive and
+    gated behind ``allow_deletions`` and ``dry_run``.
+
+    Parameters
     ----------
     snis : DHIS2
-        DHIS2 client used to perform API calls to SNIS.
+        SNIS client.
     dedop : DHIS2
-        DHIS2 client used to perform API calls to Dedop.
+        DEDOP client.
     dataset_id : str
-        Identifier of the dataset to synchronize organisation units for.
+        Dataset identifier.
     org_unit_ids : list[str] | None
-        Specific organisation unit IDs to consider (None to include all).
+        Optional restriction to specific org units.
+    allow_deletions : bool
+        Whether to unassign org units present in DEDOP but absent from SNIS.
+    dry_run : bool
+        Simulate without writing.
     """
-    # Extract organisation units from SNIS dataset
     dataset_units_snis = snis.api.get(
         endpoint=f"dataSets/{dataset_id}?fields=organisationUnits[id]", use_cache=False
     )
     existing_ids_snis = {ou["id"] for ou in dataset_units_snis.get("organisationUnits", [])}
 
-    # Extract organisation units from Dedop dataset
     dataset_units_dedop = dedop.api.get(
         endpoint=f"dataSets/{dataset_id}?fields=organisationUnits[id]", use_cache=False
     )
     existing_ids_dedop = {ou["id"] for ou in dataset_units_dedop.get("organisationUnits", [])}
 
-    # Compute delta sets
-    to_add = (
-        existing_ids_snis - existing_ids_dedop
-        if org_unit_ids is None
-        else existing_ids_snis.intersection(set(org_unit_ids)) - existing_ids_dedop
-    )
+    if org_unit_ids is None:
+        to_add = existing_ids_snis - existing_ids_dedop
+        to_delete = existing_ids_dedop - existing_ids_snis
+    else:
+        scope = set(org_unit_ids)
+        to_add = (existing_ids_snis & scope) - existing_ids_dedop
+        to_delete = (existing_ids_dedop & scope) - existing_ids_snis
 
-    to_delete = (
-        existing_ids_dedop - existing_ids_snis
-        if org_unit_ids is None
-        else existing_ids_dedop.intersection(set(org_unit_ids)) - existing_ids_snis
-    )
-    if to_delete:
+    if to_delete and not allow_deletions:
         current_run.log_info(
-            f"Les orgUnits {', '.join(sorted(to_delete))} sont présents dans le dataset "
-            f"{dataset_id} de Dedop mais absents de SNIS. "
+            f"{len(to_delete)} orgUnit(s) présents dans DEDOP mais absents de SNIS pour le "
+            f"dataset {dataset_id} — désassignation désactivée (allow_deletions=False)."
         )
+    elif to_delete and allow_deletions:
         url = f"{dedop.api.url}/dataSets/{dataset_id}/organisationUnits"
         for ou in sorted(to_delete):
-            for endpoint in (f"{url}/{ou}",):
-                try:
-                    res = dedop.api.session.delete(url=endpoint)
-                    status = getattr(res, "status_code", None)
-                    if status in (200, 204):
-                        current_run.log_info(
-                            f"Suppression de l'orgUnit {ou} du DataSet {dataset_id} "
-                            f"(status={status})."
-                        )
-                        existing_ids_dedop.remove(ou)
-                    else:
-                        body = getattr(res, "text", "")
-                        current_run.log_error(
-                            f"Échec de la suppression de l'orgUnit {ou} de '{endpoint}': "
-                            f"status={status}, body={body}"
-                        )
-                except Exception as e:
-                    current_run.log_error(
-                        f"Exception lors de la suppression de l'orgUnit {ou} de '{endpoint}': {e!s}"
-                    )
-
-    if to_add:
-        for ou in sorted(to_add):
-            endpoint = f"dataSets/{dataset_id}/organisationUnits/{ou}"
+            if dry_run:
+                current_run.log_info(
+                    f"[dry_run] désassignation orgUnit {ou} du dataset {dataset_id}"
+                )
+                continue
             try:
-                res_i = dedop.api.post(endpoint=endpoint)
-                status_i = getattr(res_i, "status_code", None)
-                if status_i in (200, 201):
-                    existing_ids_dedop.add(ou)
-                elif status_i == 409:
-                    existing_ids_dedop.add(ou)
+                res = dedop.api.session.delete(url=f"{url}/{ou}")
+                status = getattr(res, "status_code", None)
+                if status in (200, 204):
+                    existing_ids_dedop.discard(ou)
+                    current_run.log_info(f"orgUnit {ou} désassigné du dataset {dataset_id}.")
                 else:
-                    current_run.log_error(f"Échec ajout orgUnit {ou} (status={status_i}).")
+                    body = getattr(res, "text", "")
+                    current_run.log_error(
+                        f"Échec désassignation orgUnit {ou} (status={status}, body={body})."
+                    )
             except Exception as e:
-                current_run.log_error(f"Exception lors de l'ajout de l'orgUnit {ou}: {e!s}")
+                current_run.log_error(f"Exception désassignation orgUnit {ou}: {e!s}")
 
-    # Return final reconciled set
-    return
+    for ou in sorted(to_add):
+        if dry_run:
+            current_run.log_info(f"[dry_run] assignation orgUnit {ou} au dataset {dataset_id}")
+            continue
+        endpoint = f"dataSets/{dataset_id}/organisationUnits/{ou}"
+        try:
+            res_i = dedop.api.post(endpoint=endpoint)
+            status_i = getattr(res_i, "status_code", None)
+            if status_i in (200, 201, 409):
+                existing_ids_dedop.add(ou)
+            else:
+                current_run.log_error(f"Échec assignation orgUnit {ou} (status={status_i}).")
+        except Exception as e:
+            current_run.log_error(f"Exception assignation orgUnit {ou}: {e!s}")
+
+
+@snis_to_dedop_sync.task
+def ensure_disaggregation_metadata(
+    snis: DHIS2,
+    dedop: DHIS2,
+    dataset_id: str,
+    create_missing_metadata: bool,
+    dry_run: bool,
+) -> dict:
+    """Detect (and optionally create) disaggregation metadata missing in DEDOP.
+
+    Compares, per data element, the real categoryOptionCombos of SNIS vs DEDOP. COCs present
+    in SNIS but missing in DEDOP are created in DEDOP (UIDs preserved) only when
+    ``create_missing_metadata`` is enabled and not in ``dry_run``; otherwise affected values
+    are skipped and reported.
+
+    Parameters
+    ----------
+    snis : DHIS2
+        SNIS client.
+    dedop : DHIS2
+        DEDOP client.
+    dataset_id : str
+        Dataset identifier.
+    create_missing_metadata : bool
+        Whether to create the missing metadata in DEDOP.
+    dry_run : bool
+        Simulate without writing.
+
+    Returns
+    -------
+    dict
+        ``{"data_element_ids", "coc_target", "missing", "created"}``.
+    """
+    de_snis = _dataset_data_element_ids(snis, dataset_id)
+    de_dedop = _dataset_data_element_ids(dedop, dataset_id)
+    common = sorted(de_snis & de_dedop)
+
+    only_snis = de_snis - de_dedop
+    if only_snis:
+        current_run.log_warning(
+            f"{len(only_snis)} dataElement(s) présents dans SNIS mais absents du dataset "
+            f"{dataset_id} de DEDOP — ignorés."
+        )
+
+    coc_snis = get_data_element_cocs(snis, common)
+    coc_dedop = get_data_element_cocs(dedop, common)
+
+    missing = {de: coc_snis.get(de, set()) - coc_dedop.get(de, set()) for de in common}
+    missing = {de: cocs for de, cocs in missing.items() if cocs}
+
+    created: list[str] = []
+    if missing:
+        missing_coc_ids = sorted({coc for cocs in missing.values() for coc in cocs})
+        if create_missing_metadata and not dry_run:
+            current_run.log_info(
+                f"Création de {len(missing_coc_ids)} categoryOptionCombo(s) manquants dans DEDOP "
+                f"pour le dataset {dataset_id}."
+            )
+            created = _create_missing_coc_metadata(snis, dedop, missing_coc_ids)
+            coc_dedop = get_data_element_cocs(dedop, common)
+        else:
+            current_run.log_warning(
+                f"{len(missing_coc_ids)} categoryOptionCombo(s) manquants dans DEDOP pour le "
+                f"dataset {dataset_id} — valeurs correspondantes ignorées "
+                f"(create_missing_metadata={create_missing_metadata}, dry_run={dry_run})."
+            )
+
+    return {
+        "data_element_ids": common,
+        "coc_target": {de: sorted(coc_dedop.get(de, set())) for de in common},
+        "missing": {de: sorted(cocs) for de, cocs in missing.items()},
+        "created": created,
+    }
 
 
 @snis_to_dedop_sync.task
 def fetch_dhis2_data(
     snis: DHIS2,
-    dedop: DHIS2,
     dataset_id: str,
     org_unit_ids: list[str] | None,
+    extraction_root: str,
     periods_range: list[datetime],
     last_updated: datetime | None,
     automate_sync: bool,
+    use_cache: bool,
+    metadata_report: dict,
 ) -> pl.DataFrame:
-    """Fetch data from DHIS2 for given dataset, org unit, periods, and last updated filter.
+    """Fetch data values from SNIS for the given dataset and window.
+
+    Extraction is performed from ``extraction_root`` with children included, then post-filtered
+    on ``org_unit_ids`` (performance-driven strategy). Rows are restricted to the common data
+    elements and to the (dataElement, COC) pairs available in DEDOP.
 
     Parameters
     ----------
     snis : DHIS2
-        DHIS2 client used to perform API calls to SNIS.
-    dedop : DHIS2
-        DHIS2 client for Dedop system.
+        SNIS client.
     dataset_id : str
-        Identifier of the dataset to query.
+        Dataset identifier.
     org_unit_ids : list[str] | None
-        Organisation unit IDs to filter on (None to include all).
+        Optional post-filter on organisation units.
+    extraction_root : str
+        Root org unit for extraction.
     periods_range : list[datetime]
-        List of periods (as datetime objects) to fetch data for.
+        ``[start, end]`` window.
     last_updated : datetime | None
-        Only return records updated since this ISO date (YYYY-MM-DD), if provided.
+        Manual backfill cutoff.
     automate_sync : bool
-        Whether to automate the synchronization process.
+        Daily incremental mode (lastUpdated = today).
+    use_cache : bool
+        Use cached SNIS responses.
+    metadata_report : dict
+        Output of ``ensure_disaggregation_metadata``.
 
     Returns
     -------
     pl.DataFrame
-        A Polars DataFrame containing the fetched data.
+        Filtered data values including the ``deleted`` flag.
     """
-    try:
-        # Recover dataElement from dataset
-        data_element = dedop.api.get(
-            endpoint=f"dataSets/{dataset_id}?fields=dataSetElements[dataElement[id]]",
-            use_cache=False,
-        )
-        existing_de_id_ddp = {
-            de["dataElement"]["id"] for de in data_element.get("dataSetElements", [])
-        }
-        data_element = snis.api.get(
-            endpoint=f"dataSets/{dataset_id}?fields=dataSetElements[dataElement[id]]",
-            use_cache=False,
-        )
-        existing_de_id_snis = {
-            de["dataElement"]["id"] for de in data_element.get("dataSetElements", [])
-        }
-        data_element_ids = list(existing_de_id_ddp.intersection(existing_de_id_snis))
+    if automate_sync:
+        cutoff = last_updated or datetime.now()
+    else:
+        cutoff = last_updated
 
-        # Filters data elements where categoryCombo are same
-        filters = f"id:in:[{','.join(data_element_ids)}]"
+    params: dict = {
+        "dataSet": dataset_id,
+        "orgUnit": extraction_root,
+        "children": "true",
+        "startDate": periods_range[0].strftime("%Y-%m-%d"),
+        "endDate": periods_range[-1].strftime("%Y-%m-%d"),
+        "includeDeleted": "true",
+    }
+    if cutoff is not None:
+        params["lastUpdated"] = cutoff.strftime("%Y-%m-%d")
 
-        df_de = pl.DataFrame(
-            dedop.meta.data_elements(fields="id,categoryCombo", filters=[filters])
-        ).join(
-            pl.DataFrame(snis.meta.data_elements(fields="id,categoryCombo", filters=[filters])),
-            on="id",
+    cutoff_msg = f", lastUpdated={params['lastUpdated']}" if "lastUpdated" in params else ""
+    current_run.log_info(
+        f"Extraction SNIS dataset `{dataset_id}` racine `{extraction_root}` "
+        f"({params['startDate']} → {params['endDate']}{cutoff_msg})"
+    )
+
+    response = snis.api.get(endpoint="dataValueSets", params=params, use_cache=use_cache)
+    data = _build_dataframe(response.get("dataValues", []))
+
+    if data.is_empty():
+        current_run.log_info(f"Aucun enregistrement extrait pour le dataset `{dataset_id}`.")
+        return data
+
+    # Keep only the latest version of each logical data value.
+    subset = [
+        "data_element_id",
+        "period",
+        "organisation_unit_id",
+        "category_option_combo_id",
+        "attribute_option_combo_id",
+    ]
+    data = data.sort(by="last_updated").unique(subset=subset, keep="last")
+
+    if org_unit_ids:
+        data = data.filter(pl.col("organisation_unit_id").is_in(org_unit_ids))
+
+    selected_de = metadata_report.get("data_element_ids", [])
+    data = data.filter(pl.col("data_element_id").is_in(selected_de))
+
+    # Restrict to (dataElement, COC) pairs available in DEDOP.
+    coc_target = metadata_report.get("coc_target", {})
+    allowed_rows = [
+        {"data_element_id": de, "category_option_combo_id": coc}
+        for de, cocs in coc_target.items()
+        for coc in cocs
+    ]
+    total_before = len(data)
+    if allowed_rows:
+        allowed = pl.DataFrame(allowed_rows)
+        data = data.join(allowed, on=["data_element_id", "category_option_combo_id"], how="semi")
+    else:
+        data = data.clear()
+
+    blocked = total_before - len(data)
+    if blocked:
+        current_run.log_warning(
+            f"{blocked} enregistrement(s) ignorés (COC absent de DEDOP) pour le dataset "
+            f"`{dataset_id}`."
         )
-        df_de = df_de.with_columns(
-            pl.struct(["categoryCombo", "categoryCombo_right"])
-            .map_elements(
-                lambda row: len(set(row["categoryCombo"]) - set(row["categoryCombo_right"]))
-            )
-            .alias("coc_equiv")
-        )
-        selected_de = df_de.filter(pl.col("coc_equiv") == 0)["id"].unique().to_list()
-        ignored_de = df_de.filter(pl.col("coc_equiv") != 0)["id"].unique().to_list()
 
-        # Get period type of target dataset
-        datasets = snis.meta.datasets(
-            fields="periodType",
-            filters=[f"identifiable:token:{dataset_id}"],
-        )
-        period_type_source = datasets[0].get("periodType", "Monthly") if datasets else "Monthly"  # type: ignore
-
-        datasets = dedop.meta.datasets(
-            fields="periodType",
-            filters=[f"identifiable:token:{dataset_id}"],
-        )
-        period_type_target = datasets[0].get("periodType", "Monthly") if datasets else "Monthly"  # type: ignore
-
-        # Fetch data for each period and aggregate
-        if not automate_sync:
-            current_run.log_info(
-                f"Récupération des données depuis le SNIS pour le dataset id `{dataset_id}` "
-                f"pour les périodes `{periods_range[0].strftime('%Y-%m-%d')}`"
-                f" - `{periods_range[-1].strftime('%Y-%m-%d')}`"
-            )
-            data = dataframe.extract_dataset(
-                snis,
-                dataset=dataset_id,
-                org_units=["ZD44Asc0bAk"],
-                start_date=periods_range[0],
-                end_date=periods_range[-1],
-                last_updated=last_updated,
-                include_children=True,
-            )
-        else:
-            dt_now = datetime.now()
-            month_end_day = (dt_now + relativedelta(day=31)).day
-            is_scheduled_at = dt_now.day in (1, 15, month_end_day) and dt_now.hour in (6, 18)
-
-            if last_updated:
-                last_updated_str = last_updated.strftime("%Y-%m-%d")
-            elif is_scheduled_at:
-                last_updated_str = (dt_now.replace(day=1) - relativedelta(months=1)).strftime(
-                    "%Y-%m-%d"
-                )
-            else:
-                last_updated_str = dt_now.strftime("%Y-%m-%d")
-            current_run.log_info(
-                f"Extraction des données en mode automatisé avec "
-                f"la date de dernière mise à jour: {last_updated_str}"
-            )
-            data_values = snis.api.get(
-                endpoint="dataValueSets",
-                params={
-                    "dataSet": dataset_id,
-                    "dataElement": ",".join(data_element_ids),
-                    "orgUnit": "ZD44Asc0bAk",
-                    "children": True,
-                    "lastUpdated": last_updated_str,
-                    "includeDeleted": True,
-                },
-            )
-            subset = [
-                "data_element_id",
-                "period",
-                "organisation_unit_id",
-                "category_option_combo_id",
-                "attribute_option_combo_id",
-                "last_updated",
-            ]
-            data = dataframe._data_values_to_dataframe(data_values.get("dataValues", []))
-            data = (
-                data.sort(by=subset)
-                .unique(subset=subset, keep="last")
-                .with_columns(pl.col("value").fill_null("0"))
-            )
-
-        data = (
-            data.filter(pl.col("organisation_unit_id").is_in(org_unit_ids))
-            if org_unit_ids
-            else data
-        )
-        if ignored_de:
-            current_run.log_critical(
-                f"Ces éléments de données {', '.join(ignored_de)} ont été ignorés compte tenu "
-                "du fait que les categoryCombos ne sont pas identiques"
-            )
-
-        data = data.filter(pl.col("data_element_id").is_in(selected_de))
-        current_run.log_info(
-            f"Extraction de {len(data)} enregistrements pour le dataset `{dataset_id}` "
-            f"effectuée avec succès."
-        )
-        if period_type_source == period_type_target:
-            return data
-
-        current_run.log_info(
-            f"Une conversion est requise pour le dataset id {dataset_id} entre "
-            f"les types de période du SNIS: {period_type_source} et DEDOP: {period_type_target}"
-            "revoir la configuration du dataset dans DEDOP."
-        )
-        return pl.DataFrame()
-
-    except Exception as err:
-        current_run.log_error(
-            f"Erreur lors de la récupération des données DHIS2 "
-            f"sur le dataset_id {dataset_id}: {err!s}"
-        )
-        return pl.DataFrame()
+    current_run.log_info(
+        f"Extraction de {len(data)} enregistrement(s) retenus pour le dataset `{dataset_id}`."
+    )
+    return data
 
 
 @snis_to_dedop_sync.task
-def prepare_data_for_dhis2(df: pl.DataFrame, dhis2_aoc: str) -> list[dict]:
-    """Prepare data for DHIS2 by adjusting organisation unit codes.
+def convert_periods(snis: DHIS2, dedop: DHIS2, dataset_id: str, df: pl.DataFrame) -> pl.DataFrame:
+    """Convert period ids when the SNIS and DEDOP period types differ.
+
+    Conversion is done at the dataSet level and only supports aggregation from a finer to a
+    coarser period type. Unsupported pairs raise (explicit dataset failure).
+
+    Parameters
+    ----------
+    snis : DHIS2
+        SNIS client.
+    dedop : DHIS2
+        DEDOP client.
+    dataset_id : str
+        Dataset identifier.
+    df : pl.DataFrame
+        Extracted data values.
+
+    Returns
+    -------
+    pl.DataFrame
+        Data values with periods converted to the target period type.
+    """
+    if df.is_empty():
+        return df
+
+    period_type_source = _dataset_period_type(snis, dataset_id)
+    period_type_target = _dataset_period_type(dedop, dataset_id)
+    if period_type_source == period_type_target:
+        return df
+
+    current_run.log_info(
+        f"Conversion de période requise pour `{dataset_id}`: "
+        f"{period_type_source} (SNIS) → {period_type_target} (DEDOP)"
+    )
+
+    periods = df["period"].unique().to_list()
+    mapping = {p: convert_period_id(p, period_type_source, period_type_target) for p in periods}
+    unsupported = [p for p, v in mapping.items() if v is None]
+    if unsupported:
+        raise ValueError(
+            f"Conversion {period_type_source}→{period_type_target} non supportée pour le dataset "
+            f"{dataset_id} (revoir la configuration du dataset dans DEDOP)."
+        )
+
+    df = df.with_columns(pl.col("period").replace_strict(mapping, default=None).alias("period"))
+
+    # Aggregate numeric values into the coarser target period.
+    agg_types = _data_element_aggregation_types(dedop, df["data_element_id"].unique().to_list())
+    df = df.with_columns(pl.col("value").cast(pl.Float64, strict=False).alias("_num"))
+    non_numeric = df.filter(pl.col("_num").is_null() & pl.col("value").is_not_null()).height
+    if non_numeric:
+        current_run.log_warning(
+            f"{non_numeric} valeur(s) non numériques ignorées lors de l'agrégation de période "
+            f"pour `{dataset_id}`."
+        )
+
+    keys = [
+        "data_element_id",
+        "period",
+        "organisation_unit_id",
+        "category_option_combo_id",
+        "attribute_option_combo_id",
+    ]
+    averaged_de = [de for de, at in agg_types.items() if at and at.upper().startswith("AVERAGE")]
+    return (
+        df.filter(pl.col("_num").is_not_null())
+        .group_by(keys)
+        .agg(
+            pl.col("_num").sum().alias("_sum"),
+            pl.col("_num").mean().alias("_mean"),
+            pl.col("deleted").max().alias("deleted"),
+            pl.col("last_updated").max().alias("last_updated"),
+        )
+        .with_columns(
+            pl.when(pl.col("data_element_id").is_in(averaged_de))
+            .then(pl.col("_mean"))
+            .otherwise(pl.col("_sum"))
+            .alias("value")
+        )
+        .with_columns(pl.col("value").cast(pl.String))
+        .drop(["_sum", "_mean"])
+    )
+
+
+@snis_to_dedop_sync.task
+def prepare_data_for_dhis2(df: pl.DataFrame, target_aoc: str) -> dict:
+    """Prepare upsert and delete payloads for DHIS2.
+
+    All values are stamped with the DEDOP target attributeOptionCombo. Rows flagged ``deleted``
+    in the source are partitioned into a delete payload for propagation.
 
     Parameters
     ----------
     df : pl.DataFrame
-        Input DataFrame containing DHIS2 data.
-    dhis2_aoc : str
-        DHIS2 attribute option combo ID to set for all records.
+        Data values including the ``deleted`` flag.
+    target_aoc : str
+        Target (DEDOP) attributeOptionCombo.
 
     Returns
     -------
-    list[dict]
-        Flat list of data values ready for DHIS2 ingestion.
+    dict
+        ``{"upserts": [...], "deletes": [...]}``.
     """
+    empty = {"upserts": [], "deletes": []}
     if df.is_empty():
-        return []
+        return empty
 
-    # Required columns sanity check
     required_cols = {
         "data_element_id",
         "organisation_unit_id",
         "category_option_combo_id",
         "period",
         "value",
+        "deleted",
     }
     missing = [c for c in required_cols if c not in df.columns]
     if missing:
-        current_run.log_error(
-            f"Colonnes manquantes pour la préparation du payload: {', '.join(missing)}"
-        )
-        return []
+        current_run.log_error(f"Colonnes manquantes pour le payload: {', '.join(missing)}")
+        return empty
 
-    # Filter out null/empty values early to reduce payload size
-    df = df.filter(pl.col("value").is_not_null())
-
-    # Always set the attribute option combo provided by parameter
-    df = df.with_columns(pl.lit(dhis2_aoc).alias("attributeOptionCombo"))
-
-    df = df.select(
-        [
+    base = (
+        df.with_columns(pl.lit(target_aoc).alias("attributeOptionCombo"))
+        .select(
             pl.col("data_element_id").alias("dataElement"),
             pl.col("attributeOptionCombo"),
             pl.col("organisation_unit_id").alias("orgUnit"),
             pl.col("category_option_combo_id").alias("categoryOptionCombo"),
             pl.col("period"),
             pl.col("value").cast(pl.String).alias("value"),
-        ]
-    ).drop_nulls(["dataElement", "orgUnit", "period"])
+            pl.col("deleted").fill_null(False).alias("deleted"),
+        )
+        .drop_nulls(["dataElement", "orgUnit", "period", "categoryOptionCombo"])
+    )
 
-    return df.to_dicts()
+    deletes_df = base.filter(pl.col("deleted"))
+    upserts_df = base.filter(~pl.col("deleted") & pl.col("value").is_not_null())
+
+    upserts = upserts_df.drop("deleted").to_dicts()
+    deletes = [
+        {**row, "deleted": True}
+        for row in deletes_df.with_columns(pl.col("value").fill_null("")).to_dicts()
+    ]
+    return {"upserts": upserts, "deletes": deletes}
 
 
 @snis_to_dedop_sync.task
 def push_data_to_dhis2(
     dhis2: DHIS2,
-    payload: list[dict],
+    prepared: dict,
     dataset_id: str,
     dry_run: bool,
     import_mode: str = "CREATE_AND_UPDATE",
     post_batch_size: int = 5000,
 ) -> dict:
-    """Envoi des données à DHIS2 avec découpage en chunks et retry.
+    """Push upserts and deletes to DHIS2 with chunking and retries.
 
-    Args:
-        dhis2: Client DHIS2 configuré
-        payload: Données à importer
-        dataset_id: Identifiant du dataset DHIS2
-        dry_run: Mode test sans écriture
-        import_mode: Stratégie d'import DHIS2 (CREATE, UPDATE, CREATE_AND_UPDATE)
-        post_batch_size: Taille des lots pour les requêtes POST DHIS2
+    Parameters
+    ----------
+    dhis2 : DHIS2
+        Target DHIS2 client.
+    prepared : dict
+        ``{"upserts": [...], "deletes": [...]}`` payloads.
+    dataset_id : str
+        Dataset identifier.
+    dry_run : bool
+        Simulate without writing.
+    import_mode : str
+        DHIS2 import strategy for upserts.
+    post_batch_size : int
+        Chunk size for POST requests.
 
-    Returns:
-        Dict de résumé d'import agrégé.
+    Returns
+    -------
+    dict
+        Aggregated import summary including a ``failed`` flag.
     """
-    total = len(payload)
-    if total == 0:
-        return {"status": "skipped", "imported": 0}
-
-    def _chunks(seq: list[dict], size: int):
-        for i in range(0, len(seq), size):
-            yield seq[i : i + size]
+    upserts = prepared.get("upserts", [])
+    deletes = prepared.get("deletes", [])
 
     aggregated: dict = {
         "status": "completed",
         "import_strategy": import_mode,
         "dry_run": dry_run,
-        "total": total,
-        "chunks": [],
+        "total_upserts": len(upserts),
+        "total_deletes": len(deletes),
         "totals": {"imported": 0, "updated": 0, "ignored": 0, "deleted": 0},
+        "chunks": [],
+        "failed": False,
     }
 
-    request_params = {"dryRun": dry_run, "importStrategy": import_mode}
+    if not upserts and not deletes:
+        aggregated["status"] = "skipped"
+        aggregated["imported"] = 0
+        return aggregated
+
+    if upserts:
+        _push_chunks(
+            dhis2,
+            dataset_id,
+            upserts,
+            {"dryRun": dry_run, "importStrategy": import_mode},
+            "upsert",
+            post_batch_size,
+            aggregated,
+        )
+    if deletes:
+        _push_chunks(
+            dhis2,
+            dataset_id,
+            deletes,
+            {"dryRun": dry_run, "importStrategy": "CREATE_AND_UPDATE"},
+            "delete",
+            post_batch_size,
+            aggregated,
+        )
+
+    total_success = aggregated["totals"]["imported"] + aggregated["totals"]["updated"]
+    aggregated["imported"] = total_success
+    current_run.log_info(
+        f"dataSet `{dataset_id}`: {total_success} upsert(s), "
+        f"{aggregated['totals']['deleted']} suppression(s) (strategy={import_mode})."
+    )
+    return aggregated
+
+
+@snis_to_dedop_sync.task
+def write_import_report(
+    output_dir: Path, prepared: dict, summary: dict, metadata_report: dict
+) -> None:
+    """Write payload and report files for a dataset run.
+
+    Parameters
+    ----------
+    output_dir : Path
+        Relative output directory.
+    prepared : dict
+        Prepared payloads.
+    summary : dict
+        Import summary.
+    metadata_report : dict
+        Disaggregation metadata report (added to the written report).
+    """
+    upserts = prepared.get("upserts", [])
+    deletes = prepared.get("deletes", [])
+    if not upserts and not deletes:
+        current_run.log_info("Aucun enregistrement à écrire dans le rapport d'import.")
+        return
+
+    summary = {**summary, "metadata": metadata_report}
+
+    base_output_dir = Path(workspace.files_path) / output_dir
+    base_output_dir.mkdir(parents=True, exist_ok=True)
+
+    run_dir = base_output_dir / datetime.now(tz=UTC).strftime("%Y-%m-%d_%H-%M-%S_%f")
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    payload_fp = run_dir / "payload.json"
+    with payload_fp.open("w", encoding="utf-8") as f:
+        json.dump(prepared, f, indent=2)
+
+    report_fp = run_dir / "report.json"
+    with report_fp.open("w", encoding="utf-8") as f:
+        json.dump(summary, f, indent=2)
+
+    current_run.log_info(f"Rapport d'import écrit dans {run_dir.as_posix()}")
+    current_run.add_file_output(payload_fp.as_posix())
+    current_run.add_file_output(report_fp.as_posix())
+
+
+@snis_to_dedop_sync.task
+def raise_on_push_failure(summary: dict, dataset_id: str) -> None:
+    """Raise if the push summary reports a hard failure.
+
+    Parameters
+    ----------
+    summary : dict
+        Import summary returned by ``push_data_to_dhis2``.
+    dataset_id : str
+        Dataset identifier (for the error message).
+    """
+    if summary.get("failed"):
+        raise RuntimeError(f"Échec d'import DHIS2 pour le dataset `{dataset_id}`.")
+
+
+@snis_to_dedop_sync.task
+def cleanup_old_directory_files(output_dir: Path, _write: None, retention_days: int = 30) -> None:
+    """Delete report directories older than ``retention_days``.
+
+    Parameters
+    ----------
+    output_dir : Path
+        Relative output directory.
+    _write : None
+        Ordering dependency (unused).
+    retention_days : int
+        Number of days to keep.
+    """
+    output_dir = Path(workspace.files_path) / output_dir
+    if not output_dir.exists():
+        return
+
+    now = datetime.now()
+    for item in output_dir.iterdir():
+        if not item.is_dir():
+            continue
+        try:
+            try:
+                folder_time = datetime.strptime(item.name, "%Y-%m-%d_%H-%M-%S_%f")
+            except ValueError:
+                folder_time = datetime.strptime(item.name, "%Y-%m-%d_%H-%M-%S")
+            if (now - folder_time).days >= retention_days:
+                for sub_item in item.iterdir():
+                    sub_item.unlink()
+                item.rmdir()
+                current_run.log_info(f"Ancien rapport supprimé: {item.as_posix()}")
+        except Exception:
+            continue
+
+
+# --------------------------------------------------------------------------------------------
+# Helpers (non-task)
+# --------------------------------------------------------------------------------------------
+
+
+def _build_dataframe(values: list[dict]) -> pl.DataFrame:
+    """Build a data value DataFrame (with the ``deleted`` flag) from raw DHIS2 dataValues.
+
+    Returns
+    -------
+    pl.DataFrame
+        Normalized data values with a boolean ``deleted`` column.
+    """
+    columns = [
+        "data_element_id",
+        "period",
+        "organisation_unit_id",
+        "category_option_combo_id",
+        "attribute_option_combo_id",
+        "value",
+        "last_updated",
+        "deleted",
+    ]
+    if not values:
+        return pl.DataFrame({c: pl.Series(c, [], dtype=pl.String) for c in columns}).with_columns(
+            pl.col("deleted").cast(pl.Boolean)
+        )
+
+    df = pl.from_dicts(values, infer_schema_length=None)
+    for src in (
+        "dataElement",
+        "period",
+        "orgUnit",
+        "categoryOptionCombo",
+        "attributeOptionCombo",
+        "value",
+        "lastUpdated",
+        "deleted",
+    ):
+        if src not in df.columns:
+            df = df.with_columns(pl.lit(None).alias(src))
+
+    return df.select(
+        pl.col("dataElement").cast(pl.String).alias("data_element_id"),
+        pl.col("period").cast(pl.String),
+        pl.col("orgUnit").cast(pl.String).alias("organisation_unit_id"),
+        pl.col("categoryOptionCombo").cast(pl.String).alias("category_option_combo_id"),
+        pl.col("attributeOptionCombo").cast(pl.String).alias("attribute_option_combo_id"),
+        pl.col("value").cast(pl.String),
+        pl.col("lastUpdated").cast(pl.String).alias("last_updated"),
+        pl.col("deleted").cast(pl.Boolean, strict=False).fill_null(value=False),
+    )
+
+
+def _dataset_data_element_ids(dhis2: DHIS2, dataset_id: str) -> set[str]:
+    """Return the set of data element ids assigned to a dataset.
+
+    Returns
+    -------
+    set[str]
+        The data element ids of the dataset.
+    """
+    response = dhis2.api.get(
+        endpoint=f"dataSets/{dataset_id}?fields=dataSetElements[dataElement[id]]",
+        use_cache=False,
+    )
+    return {de["dataElement"]["id"] for de in response.get("dataSetElements", [])}
+
+
+def _dataset_period_type(dhis2: DHIS2, dataset_id: str) -> str:
+    """Return the periodType of a dataset (defaults to Monthly).
+
+    Returns
+    -------
+    str
+        The dataset periodType.
+    """
+    response = dhis2.api.get(endpoint=f"dataSets/{dataset_id}?fields=periodType", use_cache=False)
+    return response.get("periodType", "Monthly")
+
+
+def _data_element_aggregation_types(dhis2: DHIS2, data_element_ids: list[str]) -> dict[str, str]:
+    """Return the aggregationType for each data element.
+
+    Returns
+    -------
+    dict[str, str]
+        Mapping ``data_element_id -> aggregationType``.
+    """
+    result: dict[str, str] = {}
+    if not data_element_ids:
+        return result
+    chunk_size = 100
+    for index in range(0, len(data_element_ids), chunk_size):
+        chunk = data_element_ids[index : index + chunk_size]
+        response = dhis2.api.get(
+            endpoint="dataElements",
+            params={
+                "paging": "false",
+                "fields": "id,aggregationType",
+                "filter": f"id:in:[{','.join(chunk)}]",
+            },
+            use_cache=False,
+        )
+        for de in response.get("dataElements", []):
+            result[de["id"]] = de.get("aggregationType", "SUM")
+    return result
+
+
+def _create_missing_coc_metadata(
+    snis: DHIS2, dedop: DHIS2, missing_coc_ids: list[str]
+) -> list[str]:
+    """Create missing disaggregation metadata in DEDOP, preserving source UIDs.
+
+    Fetches the full definitions (``:owner``) of the missing categoryOptionCombos and their
+    referenced categoryOptions / categoryCombos from SNIS, then imports them into DEDOP via the
+    metadata API with ``identifier=UID``. Best-effort; the response is logged.
+
+    Returns
+    -------
+    list[str]
+        The COC ids that were successfully created/updated (empty on failure).
+    """
+    if not missing_coc_ids:
+        return []
+
+    coc_objs: list[dict] = []
+    category_option_ids: set[str] = set()
+    category_combo_ids: set[str] = set()
+
+    chunk_size = 100
+    for index in range(0, len(missing_coc_ids), chunk_size):
+        chunk = missing_coc_ids[index : index + chunk_size]
+        resp = snis.api.get(
+            endpoint="categoryOptionCombos",
+            params={
+                "paging": "false",
+                "fields": "id,name,ignoreApproval,categoryCombo[id],categoryOptions[id]",
+                "filter": f"id:in:[{','.join(chunk)}]",
+            },
+            use_cache=False,
+        )
+        for coc in resp.get("categoryOptionCombos", []):
+            coc_objs.append(coc)
+            if coc.get("categoryCombo", {}).get("id"):
+                category_combo_ids.add(coc["categoryCombo"]["id"])
+            category_option_ids.update(
+                o["id"] for o in coc.get("categoryOptions", []) if o.get("id")
+            )
+
+    category_options = _fetch_owner_objects(snis, "categoryOptions", sorted(category_option_ids))
+    category_combos = _fetch_owner_objects(snis, "categoryCombos", sorted(category_combo_ids))
+
+    payload = {
+        "categoryOptions": category_options,
+        "categoryCombos": category_combos,
+        "categoryOptionCombos": coc_objs,
+    }
+    try:
+        res = dedop.api.session.post(
+            url=f"{dedop.api.url}/metadata",
+            json=payload,
+            params={
+                "importStrategy": "CREATE_AND_UPDATE",
+                "identifier": "UID",
+                "atomicMode": "NONE",
+                "importMode": "COMMIT",
+            },
+        )
+        status = getattr(res, "status_code", None)
+        if status in (200, 201):
+            current_run.log_info(
+                f"Métadonnées créées/à jour dans DEDOP: {len(category_options)} categoryOption(s), "
+                f"{len(category_combos)} categoryCombo(s), {len(coc_objs)} COC."
+            )
+            return missing_coc_ids
+        current_run.log_error(
+            f"Échec création métadonnées DEDOP (status={status}): {getattr(res, 'text', '')}"
+        )
+    except Exception as e:
+        current_run.log_error(f"Exception lors de la création des métadonnées DEDOP: {e!s}")
+    return []
+
+
+def _fetch_owner_objects(dhis2: DHIS2, resource: str, ids: list[str]) -> list[dict]:
+    """Fetch full (`:owner`) definitions of metadata objects by id.
+
+    Returns
+    -------
+    list[dict]
+        The full metadata object definitions.
+    """
+    objects: list[dict] = []
+    if not ids:
+        return objects
+    chunk_size = 100
+    for index in range(0, len(ids), chunk_size):
+        chunk = ids[index : index + chunk_size]
+        resp = dhis2.api.get(
+            endpoint=resource,
+            params={"paging": "false", "fields": ":owner", "filter": f"id:in:[{','.join(chunk)}]"},
+            use_cache=False,
+        )
+        objects.extend(resp.get(resource, []))
+    return objects
+
+
+def _push_chunks(
+    dhis2: DHIS2,
+    dataset_id: str,
+    values: list[dict],
+    request_params: dict,
+    label: str,
+    post_batch_size: int,
+    aggregated: dict,
+) -> None:
+    """Post a list of data values in chunks with retry/backoff, updating ``aggregated``."""
+    url = dhis2.api.url + "/dataValueSets"
     max_retries = 3
     backoff_base = 1.0
-    url = dhis2.api.url + "/dataValueSets"
 
-    for idx, chunk in enumerate(_chunks(payload, post_batch_size), start=1):
-        import_counts = {"imported": 0, "updated": 0, "ignored": 0, "deleted": 0}
-        issues: list = []
+    for offset in range(0, len(values), post_batch_size):
+        chunk = values[offset : offset + post_batch_size]
+        idx = offset // post_batch_size + 1
 
         response = None
         for attempt in range(1, max_retries + 1):
             response = dhis2.api.session.post(
-                url=url, json={"dataSet": dataset_id, "dataValues": chunk}, params=request_params
+                url=url,
+                json={"dataSet": dataset_id, "dataValues": chunk},
+                params=request_params,
             )
             status = response.status_code
             if status == 200:
@@ -653,21 +1258,21 @@ def push_data_to_dhis2(
             if status == 429 or 500 <= status < 600:
                 sleep_s = backoff_base * (2 ** (attempt - 1))
                 current_run.log_warning(
-                    f"Chunk {idx} attempt {attempt}/{max_retries} failed (status={status}). "
-                    f"Retrying in {sleep_s:.1f}s..."
+                    f"[{label}] chunk {idx} tentative {attempt}/{max_retries} échouée "
+                    f"(status={status}). Nouvel essai dans {sleep_s:.1f}s..."
                 )
                 time.sleep(sleep_s)
                 continue
-            # Non-retryable error
             break
 
-        if response is None:
+        if response is None or response.status_code != 200:
+            aggregated["failed"] = True
+            body = response.text if response is not None else "no response"
             aggregated["chunks"].append(
-                {"index": idx, "size": len(chunk), "summary": {}, "status": "failed"}
+                {"label": label, "index": idx, "size": len(chunk), "status": "failed"}
             )
             current_run.log_error(
-                f"Error importing for dataset {dataset_id} chunk {idx}: no response from DHIS2 "
-                f"(strategy={import_mode})"
+                f"[{label}] échec import dataset {dataset_id} chunk {idx}: {body}"
             )
             continue
 
@@ -676,124 +1281,32 @@ def push_data_to_dhis2(
         except Exception:
             resp_data = {}
 
-        if response.status_code != 200:
-            aggregated["chunks"].append(
-                {"index": idx, "size": len(chunk), "summary": resp_data, "status": "failed"}
-            )
-            current_run.log_error(
-                f"Error importing for dataset {dataset_id} chunk {idx}: {response.text} "
-                f"(strategy={import_mode})"
-            )
-            continue
-
         chunk_summary = resp_data.get("response", resp_data)
-        if "importCount" in chunk_summary:
-            ic = chunk_summary.get("importCount", {})
-            import_counts["ignored"] = ic.get("ignored", 0)
-            import_counts["imported"] = ic.get("imported", 0)
-            import_counts["updated"] = ic.get("updated", 0)
-            import_counts["deleted"] = ic.get("deleted", 0)
+        ic = chunk_summary.get("importCount", {}) or {}
+        counts = {
+            "imported": ic.get("imported", 0),
+            "updated": ic.get("updated", 0),
+            "ignored": ic.get("ignored", 0),
+            "deleted": ic.get("deleted", 0),
+        }
+        for key, value in counts.items():
+            aggregated["totals"][key] += value
 
         for conflict in chunk_summary.get("conflicts", []) or []:
             current_run.log_warning(
-                "Conflict in dataset {dataset_id} chunk {i}: {obj} - {val}".format(
-                    dataset_id=dataset_id,
-                    i=idx,
-                    obj=conflict.get("object", ""),
-                    val=conflict.get("value", ""),
-                )
+                f"Conflit dataset {dataset_id} chunk {idx} [{label}]: "
+                f"{conflict.get('object', '')} - {conflict.get('value', '')}"
             )
-            issues.append(conflict)
 
         aggregated["chunks"].append(
             {
+                "label": label,
                 "index": idx,
                 "size": len(chunk),
-                "importCount": import_counts,
-                "issues": issues,
+                "importCount": counts,
                 "status": "success",
             }
         )
-
-        aggregated["totals"]["imported"] += import_counts["imported"]
-        aggregated["totals"]["updated"] += import_counts["updated"]
-        aggregated["totals"]["ignored"] += import_counts["ignored"]
-        aggregated["totals"]["deleted"] += import_counts["deleted"]
-
-    total_success = aggregated["totals"]["imported"] + aggregated["totals"]["updated"]
-    aggregated["imported"] = total_success
-    current_run.log_info(
-        f"Imported {total_success}/{total} data values to DHIS2 for dataSet ID `{dataset_id}`"
-        f" (strategy={import_mode})"
-    )
-    return aggregated  # type: ignore
-
-
-@snis_to_dedop_sync.task
-def write_import_report(output_dir: Path, payload: list[dict], summary: dict) -> None:
-    """Génère les rapports d'import.
-
-    Args:
-        output_dir: Répertoire de sortie
-        payload: Données envoyées
-        summary: Résumé DHIS2
-    """
-    if len(payload) == 0:
-        current_run.log_info("Aucun enregistrement à écrire dans le rapport d'import.")
-        return
-
-    base_output_dir = Path(workspace.files_path) / output_dir
-    base_output_dir.mkdir(parents=True, exist_ok=True)
-
-    output_dir = base_output_dir / datetime.now(tz=UTC).strftime("%Y-%m-%d_%H-%M-%S_%f")
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    payload_fp = output_dir / "payload.json"
-    with payload_fp.open("w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2)
-
-    report_fp = output_dir / "report.json"
-    with report_fp.open("w", encoding="utf-8") as f:
-        json.dump(summary, f, indent=2)
-
-    current_run.log_info(f"Import report written to {output_dir.as_posix()}")
-    current_run.add_file_output(payload_fp.as_posix())
-    current_run.add_file_output(report_fp.as_posix())
-
-    return
-
-
-@snis_to_dedop_sync.task
-def cleanup_old_directory_files(output_dir: Path, _write: None, retention_days: int = 1) -> None:
-    """Supprime les anciens fichiers de rapport.
-
-    Pour avoir une chronologie des exécutions des tâches les deux paramètres
-    ont été rajoutés mais ils ne sont pas utilisés dans la tâche.
-
-    Args:
-        output_dir: Répertoire de sortie
-        _write: Paramètre factice pour la chronologie
-        retention_days: Nombre de jours à conserver
-    """
-    output_dir = Path(workspace.files_path) / output_dir
-    if not output_dir.exists():
-        return
-
-    now = datetime.now()
-    for item in output_dir.iterdir():
-        if item.is_dir():
-            try:
-                try:
-                    folder_time = datetime.strptime(item.name, "%Y-%m-%d_%H-%M-%S_%f")
-                except ValueError:
-                    folder_time = datetime.strptime(item.name, "%Y-%m-%d_%H-%M-%S")
-                if (now - folder_time).days >= retention_days:
-                    for sub_item in item.iterdir():
-                        sub_item.unlink()
-                    item.rmdir()
-                    current_run.log_info(f"Deleted old report directory: {item.as_posix()}")
-            except Exception:
-                continue
 
 
 if __name__ == "__main__":

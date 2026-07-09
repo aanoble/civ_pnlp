@@ -1,2 +1,1 @@
 openhexa-toolbox~=2.9
-psycopg2-binary
