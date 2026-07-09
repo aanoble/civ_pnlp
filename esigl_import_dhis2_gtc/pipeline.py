@@ -164,7 +164,8 @@ def esigl_import_dhis2(
     import_mode: str = "CREATE_AND_UPDATE",
     post_batch_size: int = 5000,
 ):
-    """Orchestre le processus complet d'import des données eSIGL -> DHIS2.
+    """
+    Orchestre le processus complet d'import des données eSIGL -> DHIS2.
 
     Args:
         dhis2_connection: Connexion DHIS2 cible
@@ -224,7 +225,8 @@ def esigl_import_dhis2(
 def read_ressources_files(
     file_path: File, sheet_name: str | None = None, schema: list | None = None
 ) -> pl.DataFrame:
-    """Charge un fichier JSON de mapping en DataFrame.
+    """
+    Charge un fichier JSON de mapping en DataFrame.
 
     Args:
         file_path: Chemin relatif depuis le répertoire de travail
@@ -263,7 +265,8 @@ def read_ressources_files(
 
 @esigl_import_dhis2.task
 def fetch_gtc_dataelement(dhis2: DHIS2) -> pl.DataFrame:
-    """Récupère les dataElements GTC depuis DHIS2.
+    """
+    Récupère les dataElements GTC depuis DHIS2.
 
     Args:
         dhis2: Client DHIS2 configuré
@@ -288,7 +291,8 @@ def add_missing_orgunits(
     df_etat_stock: pl.DataFrame,
     dataset_id: str,
 ) -> None:
-    """Ensure all mapped org units are members of the target dataset.
+    """
+    Ensure all mapped org units are members of the target dataset.
 
     This reads the org unit IDs from the provided mapping file and compares them
     to the current members of the organisation unit dateset. Any missing org units
@@ -356,7 +360,8 @@ def extract_data_from_esigl(
     facilities_code: list[str] | None = None,
     products_code: list[str] | None = None,
 ) -> pl.DataFrame:
-    """Extrait et transforme les données depuis Metabase.
+    """
+    Extrait et transforme les données depuis Metabase.
 
     Args:
         metabase: Connexion Metabase
@@ -569,7 +574,8 @@ def extract_data_from_esigl(
 def prepare_data_for_dhis2(
     df: pl.DataFrame, df_coc_mapping: pl.DataFrame, dhis2_aoc: str
 ) -> list[dict]:
-    """Prépare le payload DHIS2 à partir des données brutes.
+    """
+    Prépare le payload DHIS2 à partir des données brutes.
 
     Args:
         df: DataFrame des données combinées
@@ -612,7 +618,8 @@ def push_data_to_dhis2(
     post_batch_size: int = 5000,
     add_missing_ou: str | None = None,
 ) -> dict:
-    """Envoi des données à DHIS2 avec découpage en chunks et retry.
+    """
+    Envoi des données à DHIS2 avec découpage en chunks et retry.
 
     Args:
         dhis2: Client DHIS2 configuré
@@ -736,7 +743,8 @@ def push_data_to_dhis2(
 
 @esigl_import_dhis2.task
 def write_import_report(output_dir: Path, payload: list[dict], summary: dict) -> None:
-    """Génère les rapports d'import.
+    """
+    Génère les rapports d'import.
 
     Args:
         output_dir: Répertoire de sortie
@@ -766,7 +774,8 @@ def write_import_report(output_dir: Path, payload: list[dict], summary: dict) ->
 def cleanup_old_directory_files(
     output_dir: Path, payload: list[dict], summary: dict, retention_days: int = 20
 ) -> None:
-    """Supprime les anciens fichiers de rapport.
+    """
+    Supprime les anciens fichiers de rapport.
 
     Pour avoir une chronologie des exécutions des tâches les deux paramètres
     ont été rajoutés mais ils ne sont pas utilisés dans la tâche.

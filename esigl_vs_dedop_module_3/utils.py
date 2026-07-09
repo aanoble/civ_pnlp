@@ -25,7 +25,8 @@ QUARTER_MONTHS = {3, 6, 9, 12}
 
 
 def check_server_health(dhis2: DHIS2) -> bool:
-    """Check if the DHIS2 server is responding.
+    """
+    Check if the DHIS2 server is responding.
 
     Parameters
     ----------
@@ -48,7 +49,8 @@ def check_server_health(dhis2: DHIS2) -> bool:
 
 
 def check_metabase_server_health(metabase: Metabase) -> bool:
-    """Check if the DHIS2 server is responding.
+    """
+    Check if the DHIS2 server is responding.
 
     Parameters
     ----------
@@ -71,7 +73,8 @@ def check_metabase_server_health(metabase: Metabase) -> bool:
 
 
 def last_analytics_update(dhis2: DHIS2) -> datetime | None:
-    """Get the last update date of the analytics tables.
+    """
+    Get the last update date of the analytics tables.
 
     Parameters
     ----------
@@ -89,7 +92,8 @@ def last_analytics_update(dhis2: DHIS2) -> datetime | None:
 
 
 def parse_cutoff_date(date_str: str) -> datetime:
-    """Valide et convertit une date ISO en objet datetime.
+    """
+    Valide et convertit une date ISO en objet datetime.
 
     Args:
         date_str: Chaîne de date au format YYYY-MM-DD
@@ -108,7 +112,8 @@ def parse_cutoff_date(date_str: str) -> datetime:
 
 
 def get_date_report(date_report: datetime) -> list:
-    """Transforme une date en format de rapport français avec logique trimestrielle.
+    """
+    Transforme une date en format de rapport français avec logique trimestrielle.
 
     Args:
         date_report: Objet datetime représentant la date du rapport.
@@ -129,7 +134,8 @@ def get_date_report(date_report: datetime) -> list:
 
 
 def process_dates_from_df(df: pl.DataFrame) -> pl.DataFrame:
-    """Prépare un DataFrame avec des champs temporels normalisés.
+    """
+    Prépare un DataFrame avec des champs temporels normalisés.
 
     Args:
         df: DataFrame Polars contenant au minimum les colonnes

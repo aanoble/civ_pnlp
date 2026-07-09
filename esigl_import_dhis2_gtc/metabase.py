@@ -12,7 +12,8 @@ class MetabaseError(Exception):
 
 
 class Metabase:
-    """A class to interact with Metabase API and execute SQL queries.
+    """
+    A class to interact with Metabase API and execute SQL queries.
 
     This class provides functionality to connect to Metabase, execute SQL queries
     with automatic pagination, and retrieve data as pandas DataFrames.
@@ -24,7 +25,8 @@ class Metabase:
     def get_data_from_sql_query(
         self, sql_query: str, database_id: int = 3, chunk_size: int = 2000
     ) -> pd.DataFrame:
-        """Exécute une requête SQL sur Metabase avec pagination automatique.
+        """
+        Exécute une requête SQL sur Metabase avec pagination automatique.
 
         Args:
             sql_query: Requête SQL avec {limit} et {offset} comme paramètres de pagination
@@ -57,7 +59,8 @@ class Metabase:
             raise ValueError(f"Erreur lors de la récupération des données: {e}") from e
 
     def _prepare_sql_query(self, sql_query: str) -> str:
-        """Valide et formate la requête SQL avec les paramètres de pagination.
+        """
+        Valide et formate la requête SQL avec les paramètres de pagination.
 
         Args:
             sql_query: La requête SQL à préparer
@@ -117,7 +120,8 @@ class Metabase:
 
 
 class Api:
-    """A class to handle Metabase API authentication and session management.
+    """
+    A class to handle Metabase API authentication and session management.
 
     This class manages the connection to Metabase, validates connection parameters,
     and maintains an authenticated session for API requests.

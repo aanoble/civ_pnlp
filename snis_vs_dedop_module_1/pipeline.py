@@ -182,7 +182,8 @@ def snis_vs_dedop_module_1(
 
 @snis_vs_dedop_module_1.task
 def fetch_dataset_metadata(dhis2: DHIS2) -> pl.DataFrame:
-    """Fetch metadata for specified datasets from DHIS2.
+    """
+    Fetch metadata for specified datasets from DHIS2.
 
     Parameters
     ----------
@@ -205,7 +206,8 @@ def fetch_dataset_metadata(dhis2: DHIS2) -> pl.DataFrame:
 
 @snis_vs_dedop_module_1.task
 def fetch_organisation_units(snis: DHIS2, dedop: DHIS2) -> pl.DataFrame:
-    """Fetch organisation units from both DHIS2 instances.
+    """
+    Fetch organisation units from both DHIS2 instances.
 
     Parameters
     ----------
@@ -255,7 +257,8 @@ def fetch_organisation_units(snis: DHIS2, dedop: DHIS2) -> pl.DataFrame:
 def process_periods(
     start_date: str | None, end_date: str | None, months_back: int = 2
 ) -> list[str]:
-    """Traite les périodes selon les dates et le décalage temporel.
+    """
+    Traite les périodes selon les dates et le décalage temporel.
 
     Parameters
     ----------
@@ -317,7 +320,8 @@ def fetch_dhis2_data(
     dataset_ids: list[str],
     instance: Literal["SNIS", "DEDOP"] = "SNIS",
 ) -> pl.DataFrame:
-    """Fetch data from DHIS2 for the specified periods and data elements.
+    """
+    Fetch data from DHIS2 for the specified periods and data elements.
 
     Parameters
     ----------
@@ -367,7 +371,8 @@ def fetch_dhis2_data(
 def compare_snis_dedop(
     dhis2: DHIS2, data_snis: pl.DataFrame, data_dedop: pl.DataFrame
 ) -> pl.DataFrame:
-    """Compare SNIS and Dedop data for consistency.
+    """
+    Compare SNIS and Dedop data for consistency.
 
     Parameters
     ----------
@@ -440,7 +445,8 @@ def compare_snis_dedop(
 
 @snis_vs_dedop_module_1.task
 def evaluate_data_coherence(dhis2: DHIS2, df_compare: pl.DataFrame) -> pl.DataFrame:
-    """Evaluate data coherence based on comparison DataFrame.
+    """
+    Evaluate data coherence based on comparison DataFrame.
 
     Parameters
     ----------
@@ -519,7 +525,8 @@ def evaluate_data_coherence(dhis2: DHIS2, df_compare: pl.DataFrame) -> pl.DataFr
 def evaluate_data_completude(
     dhis2: DHIS2, data_snis: pl.DataFrame, data_dedop: pl.DataFrame
 ) -> pl.DataFrame:
-    """Evaluate data completeness based on comparison DataFrame.
+    """
+    Evaluate data completeness based on comparison DataFrame.
 
     Parameters
     ----------
@@ -603,7 +610,8 @@ def evaluate_data_completude(
 def process_data_with_org_units(
     df_data: pl.DataFrame, df_org_units: pl.DataFrame, df_datasets: pl.DataFrame, table_name: str
 ) -> pl.DataFrame:
-    """Process data by joining with organisation units and saving to a table.
+    """
+    Process data by joining with organisation units and saving to a table.
 
     Parameters
     ----------
@@ -801,7 +809,8 @@ def export_to_database(
     table_name: str,
     mode: Literal["append", "replace", "fail"] = "append",
 ) -> None:
-    """Export the DataFrame to the specified database table.
+    """
+    Export the DataFrame to the specified database table.
 
     Parameters
     ----------
@@ -888,7 +897,8 @@ def export_to_database(
 
 @snis_vs_dedop_module_1.task
 def get_dates_from_df(df_compare: pl.DataFrame, df_completude: pl.DataFrame) -> pl.DataFrame:
-    """Récupère les dates de rapport uniques à partir des DataFrames.
+    """
+    Récupère les dates de rapport uniques à partir des DataFrames.
 
     Parameters
     ----------

@@ -92,7 +92,8 @@ def esigl_vs_dedop_module_3(
     end_date: str | None,
     months_back: int,
 ):
-    """Orchestrates the eSIGL vs Dedop Module 3 data comparison and analysis pipeline.
+    """
+    Orchestrates the eSIGL vs Dedop Module 3 data comparison and analysis pipeline.
 
     Parameters.
     ----------
@@ -232,7 +233,8 @@ def esigl_vs_dedop_module_3(
 
 @esigl_vs_dedop_module_3.task
 def fetch_organisation_units(dedop: DHIS2) -> pl.DataFrame:
-    """Fetch organisation units from the Dedop DHIS2 instance.
+    """
+    Fetch organisation units from the Dedop DHIS2 instance.
 
     Parameters
     ----------
@@ -275,7 +277,8 @@ def fetch_organisation_units(dedop: DHIS2) -> pl.DataFrame:
 def process_periods(
     start_date: str | None, end_date: str | None, months_back: int = 2
 ) -> list[str]:
-    """Traite les périodes selon les dates et le décalage temporel.
+    """
+    Traite les périodes selon les dates et le décalage temporel.
 
     Parameters
     ----------
@@ -335,7 +338,8 @@ def process_periods(
 
 @esigl_vs_dedop_module_3.task
 def fetch_routine_data_elements(dhis2: DHIS2) -> pl.DataFrame:
-    """Récupère les dataElements de routine depuis DHIS2.
+    """
+    Récupère les dataElements de routine depuis DHIS2.
 
     Args:
         dhis2: Client DHIS2 configuré
@@ -357,7 +361,8 @@ def fetch_routine_data_elements(dhis2: DHIS2) -> pl.DataFrame:
 
 @esigl_vs_dedop_module_3.task
 def fetch_gtc_data_elements(dhis2: DHIS2) -> pl.DataFrame:
-    """Récupère les dataElements GTC depuis DHIS2.
+    """
+    Récupère les dataElements GTC depuis DHIS2.
 
     Args:
         dhis2: Client DHIS2 configuré
@@ -380,7 +385,8 @@ def fetch_gtc_data_elements(dhis2: DHIS2) -> pl.DataFrame:
 def read_ressources_files(
     file_path: File, sheet_name: str | None = None, schema: list | None = None
 ) -> pl.DataFrame:
-    """Charge un fichier JSON de mapping en DataFrame.
+    """
+    Charge un fichier JSON de mapping en DataFrame.
 
     Args:
         file_path: Chemin relatif depuis le répertoire de travail
@@ -424,7 +430,8 @@ def fetch_dhis2_data(
     data_elements_gtc: pl.DataFrame,
     periods_range: list[str],
 ) -> pl.DataFrame:
-    """Fetch data from DHIS2 for the specified periods and data elements.
+    """
+    Fetch data from DHIS2 for the specified periods and data elements.
 
     Parameters
     ----------
@@ -484,7 +491,8 @@ def fetch_metabase_routine_data(
     data_elements_routine: pl.DataFrame,
     periods_range: list[str],
 ) -> pl.DataFrame:
-    """Fetch routine data from Metabase for the specified periods and data elements.
+    """
+    Fetch routine data from Metabase for the specified periods and data elements.
 
     Parameters
     ----------
@@ -605,7 +613,8 @@ def fetch_metabase_gtc_data(
     data_elements_gtc: pl.DataFrame,
     periods_range: list[str],
 ) -> pl.DataFrame:
-    """Fetch GTC data from Metabase for the specified periods and data elements.
+    """
+    Fetch GTC data from Metabase for the specified periods and data elements.
 
     Parameters
     ----------
@@ -795,7 +804,8 @@ def compare_esigl_dedop(
     df_metabase_routine: pl.DataFrame,
     df_metabase_gtc: pl.DataFrame,
 ) -> pl.DataFrame:
-    """Compare eSIGL data from Metabase with Dedop data from DHIS2.
+    """
+    Compare eSIGL data from Metabase with Dedop data from DHIS2.
 
     Parameters
     ----------
@@ -875,7 +885,8 @@ def evaluate_data_coherence(
     dhis2: DHIS2,
     df_compare: pl.DataFrame,
 ) -> pl.DataFrame:
-    """Evaluate overall data coherence between eSIGL and Dedop.
+    """
+    Evaluate overall data coherence between eSIGL and Dedop.
 
     Parameters
     ----------
@@ -961,7 +972,8 @@ def evaluate_data_completeness(
     df_metabase_routine: pl.DataFrame,
     df_metabase_gtc: pl.DataFrame,
 ) -> pl.DataFrame:
-    """Evaluate overall data completeness between eSIGL and Dedop.
+    """
+    Evaluate overall data completeness between eSIGL and Dedop.
 
     Parameters
     ----------
@@ -1046,7 +1058,8 @@ def evaluate_data_completeness(
 def process_data_with_org_units(
     df_data: pl.DataFrame, df_org_units: pl.DataFrame, table_name: str
 ) -> pl.DataFrame:
-    """Process data by joining with organisation units and saving to a table.
+    """
+    Process data by joining with organisation units and saving to a table.
 
     Parameters
     ----------
@@ -1241,7 +1254,8 @@ def export_to_database(
     table_name: str,
     mode: Literal["append", "replace", "fail"] = "append",
 ) -> None:
-    """Export the DataFrame to the specified database table.
+    """
+    Export the DataFrame to the specified database table.
 
     Parameters
     ----------
@@ -1303,7 +1317,8 @@ def export_to_database(
 
 @esigl_vs_dedop_module_3.task
 def get_dates_from_df(df_compare: pl.DataFrame, df_completude: pl.DataFrame) -> pl.DataFrame:
-    """Récupère les dates de rapport uniques à partir des DataFrames.
+    """
+    Récupère les dates de rapport uniques à partir des DataFrames.
 
     Parameters
     ----------

@@ -6,7 +6,8 @@ from openhexa.toolbox.dhis2 import DHIS2
 
 
 def check_server_health(dhis2: DHIS2) -> bool:
-    """Check if the DHIS2 server is responding.
+    """
+    Check if the DHIS2 server is responding.
 
     Parameters
     ----------
@@ -29,7 +30,8 @@ def check_server_health(dhis2: DHIS2) -> bool:
 
 
 def last_analytics_update(dhis2: DHIS2) -> datetime | None:
-    """Get the last update date of the analytics tables.
+    """
+    Get the last update date of the analytics tables.
 
     Parameters
     ----------
@@ -47,7 +49,8 @@ def last_analytics_update(dhis2: DHIS2) -> datetime | None:
 
 
 def parse_cutoff_date(date_str: str) -> datetime:
-    """Valide et convertit une date ISO en objet datetime.
+    """
+    Valide et convertit une date ISO en objet datetime.
 
     Args:
         date_str: Chaîne de date au format YYYY-MM-DD
@@ -66,7 +69,8 @@ def parse_cutoff_date(date_str: str) -> datetime:
 
 
 def process_dates_from_df(df: pl.DataFrame) -> pl.DataFrame:
-    """Prépare un DataFrame avec des champs temporels normalisés.
+    """
+    Prépare un DataFrame avec des champs temporels normalisés.
 
     Args:
         df: DataFrame Polars contenant au minimum les colonnes

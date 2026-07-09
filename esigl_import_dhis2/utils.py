@@ -23,7 +23,8 @@ QUARTER_MONTHS = {3, 6, 9, 12}
 
 
 def parse_cutoff_date(date_str: str) -> datetime:
-    """Valide et convertit une date ISO en objet datetime.
+    """
+    Valide et convertit une date ISO en objet datetime.
 
     Args:
         date_str: Chaîne de date au format YYYY-MM-DD
@@ -42,7 +43,8 @@ def parse_cutoff_date(date_str: str) -> datetime:
 
 
 def get_date_report(date_report: datetime) -> list:
-    """Transforme une date en format de rapport français avec logique trimestrielle.
+    """
+    Transforme une date en format de rapport français avec logique trimestrielle.
 
     Args:
         date_report: Objet datetime représentant la date du rapport.
@@ -63,7 +65,8 @@ def get_date_report(date_report: datetime) -> list:
 
 
 def check_metabase_server_health(metabase: Metabase) -> bool:
-    """Check if the DHIS2 server is responding.
+    """
+    Check if the DHIS2 server is responding.
 
     Parameters
     ----------

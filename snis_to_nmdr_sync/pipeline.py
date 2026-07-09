@@ -1,4 +1,5 @@
-"""Pipeline de synchronisation des dataValues de l'instance source vers l'instance cible.
+"""
+Pipeline de synchronisation des dataValues de l'instance source vers l'instance cible.
 
 Voir `PLAN_AMELIORATION.md` pour le détail des choix de conception.
 """
@@ -216,7 +217,8 @@ def snis_to_nmdr_sync(
     post_batch_size: int = 5000,
     retention_days: int = 30,
 ):
-    """Synchronize data values from source DHIS2 to target DHIS2.
+    """
+    Synchronize data values from source DHIS2 to target DHIS2.
 
     Parameters
     ----------
@@ -378,7 +380,8 @@ def process_periods(
     end_date: str | None,
     months_back: int,
 ) -> list[datetime]:
-    """Compute the extraction window [start, end].
+    """
+    Compute the extraction window [start, end].
 
     ``months_back`` is only applied when ``start_date`` is empty. An explicit ``end_date`` is
     respected as-is; otherwise the end defaults to the last day of the current month.
@@ -431,7 +434,8 @@ def sync_dataset_orgunits(
     allow_deletions: bool,
     dry_run: bool,
 ) -> None:
-    """Synchronize the dataset organisation unit assignments between source and target.
+    """
+    Synchronize the dataset organisation unit assignments between source and target.
 
     Org unit *existence* in the target is guaranteed upstream by the daily org unit sync pipeline;
     this task only reconciles the dataset<->orgUnit assignment. Deletions are destructive and
@@ -522,7 +526,8 @@ def ensure_disaggregation_metadata(
     create_missing_metadata: bool,
     dry_run: bool,
 ) -> dict:
-    """Detect (and optionally create) disaggregation metadata missing in target.
+    """
+    Detect (and optionally create) disaggregation metadata missing in target.
 
     Compares, per data element, the real categoryOptionCombos of source vs target. COCs present
     in the source but missing in the target are created in the target (UIDs preserved) only when
@@ -601,7 +606,8 @@ def fetch_dhis2_data(
     use_cache: bool,
     metadata_report: dict,
 ) -> pl.DataFrame:
-    """Fetch data values from source for the given dataset and window.
+    """
+    Fetch data values from source for the given dataset and window.
 
     Extraction is performed from ``extraction_root`` with children included, then post-filtered
     on ``org_unit_ids`` (performance-driven strategy). Rows are restricted to the common data
@@ -709,7 +715,8 @@ def fetch_dhis2_data(
 def convert_periods(
     source: DHIS2, target: DHIS2, dataset_id: str, df: pl.DataFrame
 ) -> pl.DataFrame:
-    """Convert period ids when the source and target period types differ.
+    """
+    Convert period ids when the source and target period types differ.
 
     Conversion is done at the dataSet level and only supports aggregation from a finer to a
     coarser period type. Unsupported pairs raise (explicit dataset failure).
@@ -794,7 +801,8 @@ def convert_periods(
 
 @snis_to_nmdr_sync.task
 def prepare_data_for_dhis2(df: pl.DataFrame, target_aoc: str) -> dict:
-    """Prepare upsert and delete payloads for DHIS2.
+    """
+    Prepare upsert and delete payloads for DHIS2.
 
     All values are stamped with the target attributeOptionCombo. Rows flagged ``deleted``
     in the source are partitioned into a delete payload for propagation.
@@ -862,7 +870,8 @@ def push_data_to_dhis2(
     import_mode: str = "CREATE_AND_UPDATE",
     post_batch_size: int = 5000,
 ) -> dict:
-    """Push upserts and deletes to DHIS2 with chunking and retries.
+    """
+    Push upserts and deletes to DHIS2 with chunking and retries.
 
     Parameters
     ----------
@@ -937,7 +946,8 @@ def push_data_to_dhis2(
 def write_import_report(
     output_dir: Path, prepared: dict, summary: dict, metadata_report: dict
 ) -> None:
-    """Write payload and report files for a dataset run.
+    """
+    Write payload and report files for a dataset run.
 
     Parameters
     ----------
@@ -979,7 +989,8 @@ def write_import_report(
 
 @snis_to_nmdr_sync.task
 def raise_on_push_failure(summary: dict, dataset_id: str) -> None:
-    """Raise if the push summary reports a hard failure.
+    """
+    Raise if the push summary reports a hard failure.
 
     Parameters
     ----------
@@ -994,7 +1005,8 @@ def raise_on_push_failure(summary: dict, dataset_id: str) -> None:
 
 @snis_to_nmdr_sync.task
 def cleanup_old_directory_files(output_dir: Path, _write: None, retention_days: int = 30) -> None:
-    """Delete report directories older than ``retention_days``.
+    """
+    Delete report directories older than ``retention_days``.
 
     Parameters
     ----------
@@ -1033,7 +1045,8 @@ def cleanup_old_directory_files(output_dir: Path, _write: None, retention_days: 
 
 
 def _build_dataframe(values: list[dict]) -> pl.DataFrame:
-    """Build a data value DataFrame (with the ``deleted`` flag) from raw DHIS2 dataValues.
+    """
+    Build a data value DataFrame (with the ``deleted`` flag) from raw DHIS2 dataValues.
 
     Returns
     -------
@@ -1082,7 +1095,8 @@ def _build_dataframe(values: list[dict]) -> pl.DataFrame:
 
 
 def _dataset_data_element_ids(dhis2: DHIS2, dataset_id: str) -> set[str]:
-    """Return the set of data element ids assigned to a dataset.
+    """
+    Return the set of data element ids assigned to a dataset.
 
     Returns
     -------
@@ -1097,7 +1111,8 @@ def _dataset_data_element_ids(dhis2: DHIS2, dataset_id: str) -> set[str]:
 
 
 def _dataset_period_type(dhis2: DHIS2, dataset_id: str) -> str:
-    """Return the periodType of a dataset (defaults to Monthly).
+    """
+    Return the periodType of a dataset (defaults to Monthly).
 
     Returns
     -------
@@ -1109,7 +1124,8 @@ def _dataset_period_type(dhis2: DHIS2, dataset_id: str) -> str:
 
 
 def _data_element_aggregation_types(dhis2: DHIS2, data_element_ids: list[str]) -> dict[str, str]:
-    """Return the aggregationType for each data element.
+    """
+    Return the aggregationType for each data element.
 
     Returns
     -------
@@ -1139,7 +1155,8 @@ def _data_element_aggregation_types(dhis2: DHIS2, data_element_ids: list[str]) -
 def _create_missing_coc_metadata(
     source: DHIS2, target: DHIS2, missing_coc_ids: list[str]
 ) -> list[str]:
-    """Create missing disaggregation metadata in the target, preserving source UIDs.
+    """
+    Create missing disaggregation metadata in the target, preserving source UIDs.
 
     Fetches the full definitions (``:owner``) of the missing categoryOptionCombos and their
     referenced categoryOptions / categoryCombos from the source, then imports them into the
@@ -1212,7 +1229,8 @@ def _create_missing_coc_metadata(
 
 
 def _fetch_owner_objects(dhis2: DHIS2, resource: str, ids: list[str]) -> list[dict]:
-    """Fetch full (`:owner`) definitions of metadata objects by id.
+    """
+    Fetch full (`:owner`) definitions of metadata objects by id.
 
     Returns
     -------

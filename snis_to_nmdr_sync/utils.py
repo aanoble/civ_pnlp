@@ -26,7 +26,8 @@ PERIOD_GRANULARITY = {
 
 
 def check_server_health(dhis2: DHIS2) -> bool:
-    """Check if the DHIS2 server is responding.
+    """
+    Check if the DHIS2 server is responding.
 
     Parameters
     ----------
@@ -49,7 +50,8 @@ def check_server_health(dhis2: DHIS2) -> bool:
 
 
 def last_analytics_update(dhis2: DHIS2) -> datetime | None:
-    """Get the last update date of the analytics tables.
+    """
+    Get the last update date of the analytics tables.
 
     Parameters
     ----------
@@ -71,7 +73,8 @@ def last_analytics_update(dhis2: DHIS2) -> datetime | None:
 
 
 def parse_cutoff_date(date_str: str) -> datetime:
-    """Valide et convertit une date ISO en objet datetime.
+    """
+    Valide et convertit une date ISO en objet datetime.
 
     Args:
         date_str: Chaîne de date au format YYYY-MM-DD
@@ -90,7 +93,8 @@ def parse_cutoff_date(date_str: str) -> datetime:
 
 
 def validate_dataset(dhis2: DHIS2, dataset_id: str) -> bool:
-    """Validate the existence of a dataset in the DHIS2 instance.
+    """
+    Validate the existence of a dataset in the DHIS2 instance.
 
     Parameters
     ----------
@@ -115,7 +119,8 @@ def validate_dataset(dhis2: DHIS2, dataset_id: str) -> bool:
 
 
 def validate_aoc_exists(dhis2: DHIS2, aoc_id: str) -> bool:
-    """Validate that an attributeOptionCombo exists in the target instance.
+    """
+    Validate that an attributeOptionCombo exists in the target instance.
 
     Parameters
     ----------
@@ -140,7 +145,8 @@ def validate_aoc_exists(dhis2: DHIS2, aoc_id: str) -> bool:
 
 
 def get_data_element_cocs(dhis2: DHIS2, data_element_ids: list[str]) -> dict[str, set[str]]:
-    """Return, for each data element, the set of valid categoryOptionCombo ids.
+    """
+    Return, for each data element, the set of valid categoryOptionCombo ids.
 
     The COC set is resolved through the data element ``categoryCombo`` so that we compare
     the *real* disaggregation combos of each instance (and not the raw id strings).
@@ -180,7 +186,8 @@ def get_data_element_cocs(dhis2: DHIS2, data_element_ids: list[str]) -> dict[str
 
 
 def convert_period_id(period: str, source_type: str, target_type: str) -> str | None:
-    """Convert a DHIS2 period id from a source period type to a target period type.
+    """
+    Convert a DHIS2 period id from a source period type to a target period type.
 
     Only aggregation from a finer to a coarser period type is supported (e.g. Monthly ->
     Quarterly). Identity conversion is returned unchanged. Any unsupported direction
