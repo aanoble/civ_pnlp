@@ -120,7 +120,7 @@ def validate_aoc_exists(dhis2: DHIS2, aoc_id: str) -> bool:
     Parameters
     ----------
     dhis2 : DHIS2
-        The DHIS2 instance to check (the target / DEDOP).
+        The DHIS2 instance to check (the target instance).
     aoc_id : str
         The categoryOptionCombo id used as attributeOptionCombo.
 

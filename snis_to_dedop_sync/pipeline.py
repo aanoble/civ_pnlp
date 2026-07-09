@@ -1,4 +1,4 @@
-"""Pipeline de synchronisation des dataValues du SNIS vers DEDOP.
+"""Pipeline de synchronisation des dataValues de l'instance source vers l'instance cible.
 
 Voir `PLAN_AMELIORATION.md` pour le détail des choix de conception.
 """
@@ -33,18 +33,18 @@ from utils import (
 
 @pipeline("snis_to_dedop_sync", timeout=43200)
 @parameter(
-    "snis_connection",
+    "source_connection",
     type=DHIS2Connection,  # type: ignore
-    name="DHIS2 Connection for SNIS",
-    help="DHIS2 connection to fetch SNIS data from.",
+    name="DHIS2 Connection for source",
+    help="DHIS2 connection to fetch source data from.",
     default="snis-dhis2",
     required=True,
 )
 @parameter(
-    "dedop_connection",
+    "target_connection",
     type=DHIS2Connection,  # type: ignore
-    name="DHIS2 Connection for Dedop",
-    help="DHIS2 connection to push Dedop data to.",
+    name="DHIS2 Connection for target",
+    help="DHIS2 connection to push target data to.",
     default="dhis2-nmdr-temp",
     required=True,
 )
@@ -52,8 +52,8 @@ from utils import (
     "dataset_id",
     type=str,
     widget=DHIS2Widget.DATASETS,
-    connection="dedop_connection",  # type: ignore
-    name="Dataset ID in Dedop",
+    connection="target_connection",  # type: ignore
+    name="Dataset ID in target",
     required=False,
     multiple=True,
 )
@@ -61,8 +61,8 @@ from utils import (
     "org_unit_id",
     type=str,
     widget=DHIS2Widget.ORG_UNITS,
-    connection="dedop_connection",  # type: ignore
-    name="Organisation Unit ID in Dedop",
+    connection="target_connection",  # type: ignore
+    name="Organisation Unit ID in target",
     help="Optional post-filter on organisation units (subset of the extraction root).",
     required=False,
     multiple=True,
@@ -116,20 +116,20 @@ from utils import (
     required=True,
 )
 @parameter(
-    "dedop_target_aoc",
+    "target_aoc",
     type=str,  # type: ignore
-    name="DEDOP target attribute option combo",
-    help="Target (DEDOP) attributeOptionCombo applied to every value.",
+    name="Target instance attribute option combo",
+    help="Target instance attributeOptionCombo applied to every value.",
     default="HllvX50cXC0",
     required=True,
 )
 @parameter(
     "create_missing_metadata",
     type=bool,  # type: ignore
-    name="Create missing disaggregation metadata in DEDOP",
+    name="Create missing disaggregation metadata in target",
     help=(
-        "If enabled, category options / COCs present in SNIS but missing in DEDOP are created "
-        "in DEDOP (UIDs preserved). If disabled, affected values are skipped and reported."
+        "If enabled, category options / COCs present in the source but missing in the target "
+        "are created in the target (UIDs preserved). If disabled, affected values are skipped."
     ),
     default=False,
     required=False,
@@ -137,10 +137,10 @@ from utils import (
 @parameter(
     "sync_orgunit_deletions",
     type=bool,  # type: ignore
-    name="Allow org unit deletions from DEDOP datasets",
+    name="Allow org unit deletions from target datasets",
     help=(
-        "If enabled, org units present in DEDOP but absent from SNIS are unassigned "
-        "(destructive operation)."
+        "If enabled, org units present in the target but absent from the source are "
+        "unassigned (destructive operation)."
     ),
     default=False,
     required=False,
@@ -148,7 +148,7 @@ from utils import (
 @parameter(
     "use_cache",
     type=bool,  # type: ignore
-    name="Use API SNIS cache",
+    name="Use API source cache",
     help="Whether to use cached API responses where possible.",
     default=False,
     required=False,
@@ -165,7 +165,7 @@ from utils import (
     "dry_run",
     type=bool,  # type: ignore
     name="Dry run",
-    help="Simulate the import (and metadata creation) without writing to DEDOP.",
+    help="Simulate the import (and metadata creation) without writing to target.",
     default=False,
     required=False,
 )
@@ -194,8 +194,8 @@ from utils import (
     required=False,
 )
 def snis_to_dedop_sync(
-    snis_connection: DHIS2Connection,
-    dedop_connection: DHIS2Connection,
+    source_connection: DHIS2Connection,
+    target_connection: DHIS2Connection,
     dataset_id: list[str] | None,
     org_unit_id: list[str] | None,
     extraction_root_org_unit: str,
@@ -204,7 +204,7 @@ def snis_to_dedop_sync(
     months_back: int,
     last_updated: str | None,
     output_directory: str,
-    dedop_target_aoc: str,
+    target_aoc: str,
     create_missing_metadata: bool,
     sync_orgunit_deletions: bool,
     automate_sync: bool,
@@ -214,14 +214,14 @@ def snis_to_dedop_sync(
     post_batch_size: int = 5000,
     retention_days: int = 30,
 ):
-    """Synchronize data values from SNIS DHIS2 to DEDOP DHIS2.
+    """Synchronize data values from source DHIS2 to target DHIS2.
 
     Parameters
     ----------
-    snis_connection : DHIS2Connection
-        DHIS2 connection to fetch SNIS data from.
-    dedop_connection : DHIS2Connection
-        DHIS2 connection to push DEDOP data to.
+    source_connection : DHIS2Connection
+        DHIS2 connection to fetch source data from.
+    target_connection : DHIS2Connection
+        DHIS2 connection to push target data to.
     dataset_id : list[str] | None
         Dataset IDs to synchronize (defaults to the configured DATASET_IDS).
     org_unit_id : list[str] | None
@@ -236,18 +236,18 @@ def snis_to_dedop_sync(
         Manual backfill cutoff (YYYY-MM-DD).
     output_directory : str
         Directory for the output reports.
-    dedop_target_aoc : str
+    target_aoc : str
         Target attributeOptionCombo applied to every value.
     create_missing_metadata : bool
-        Whether to create missing disaggregation metadata in DEDOP.
+        Whether to create missing disaggregation metadata in target.
     sync_orgunit_deletions : bool
-        Whether to allow destructive org unit unassignment in DEDOP.
+        Whether to allow destructive org unit unassignment in target.
     automate_sync : bool
         Daily incremental mode (lastUpdated = today).
     dry_run : bool
         Simulate without writing.
     use_cache : bool
-        Use cached SNIS API responses where possible.
+        Use cached source API responses where possible.
     import_mode : str
         DHIS2 import strategy for upserts.
     post_batch_size : int
@@ -255,30 +255,32 @@ def snis_to_dedop_sync(
     retention_days : int
         Report retention in days.
     """
-    snis = (
-        DHIS2(connection=snis_connection, cache_dir=Path(workspace.files_path, "snis", ".cache"))
+    source = (
+        DHIS2(
+            connection=source_connection, cache_dir=Path(workspace.files_path, "source", ".cache")
+        )
         if use_cache
-        else DHIS2(connection=snis_connection)
+        else DHIS2(connection=source_connection)
     )
-    dedop = DHIS2(connection=dedop_connection)
+    target = DHIS2(connection=target_connection)
 
-    check_server_health(snis)
-    check_server_health(dedop)
+    check_server_health(source)
+    check_server_health(target)
 
-    if not validate_aoc_exists(dedop, dedop_target_aoc):
+    if not validate_aoc_exists(target, target_aoc):
         raise ValueError(
-            f"L'attributeOptionCombo cible `{dedop_target_aoc}` est introuvable dans DEDOP."
+            f"L'attributeOptionCombo cible `{target_aoc}` est introuvable dans l'instance cible."
         )
 
-    if last_update_snis := last_analytics_update(snis):
+    if last_update_source := last_analytics_update(source):
         current_run.log_info(
-            f"Dernière mise à jour des tables analytiques SNIS: "
-            f"{last_update_snis.strftime('%Y-%m-%d %H:%M:%S')}"
+            f"Dernière mise à jour des tables analytiques source: "
+            f"{last_update_source.strftime('%Y-%m-%d %H:%M:%S')}"
         )
-    if last_update_dedop := last_analytics_update(dedop):
+    if last_update_target := last_analytics_update(target):
         current_run.log_info(
-            f"Dernière mise à jour des tables analytiques DEDOP: "
-            f"{last_update_dedop.strftime('%Y-%m-%d %H:%M:%S')}"
+            f"Dernière mise à jour des tables analytiques target: "
+            f"{last_update_target.strftime('%Y-%m-%d %H:%M:%S')}"
         )
 
     periods_range = process_periods(
@@ -294,16 +296,16 @@ def snis_to_dedop_sync(
     for current_dataset_id in dataset_ids:
         current_run.log_info(f"Traitement du dataset `{current_dataset_id}`")
 
-        valid_snis = validate_dataset(snis, current_dataset_id)
-        valid_dedop = validate_dataset(dedop, current_dataset_id)
-        if not (valid_snis and valid_dedop):
+        valid_source = validate_dataset(source, current_dataset_id)
+        valid_target = validate_dataset(target, current_dataset_id)
+        if not (valid_source and valid_target):
             failed_datasets.append(current_dataset_id)
             continue
 
         try:
             sync_dataset_orgunits(
-                snis=snis,
-                dedop=dedop,
+                source=source,
+                target=target,
                 dataset_id=current_dataset_id,
                 org_unit_ids=org_unit_ids,
                 allow_deletions=sync_orgunit_deletions,
@@ -311,15 +313,15 @@ def snis_to_dedop_sync(
             )
 
             metadata_report = ensure_disaggregation_metadata(
-                snis=snis,
-                dedop=dedop,
+                source=source,
+                target=target,
                 dataset_id=current_dataset_id,
                 create_missing_metadata=create_missing_metadata,
                 dry_run=dry_run,
             )
 
-            data_snis = fetch_dhis2_data(
-                snis=snis,
+            data_source = fetch_dhis2_data(
+                source=source,
                 dataset_id=current_dataset_id,
                 org_unit_ids=org_unit_ids,
                 extraction_root=extraction_root_org_unit,
@@ -330,14 +332,14 @@ def snis_to_dedop_sync(
                 metadata_report=metadata_report,
             )
 
-            data_snis = convert_periods(
-                snis=snis, dedop=dedop, dataset_id=current_dataset_id, df=data_snis
+            data_source = convert_periods(
+                source=source, target=target, dataset_id=current_dataset_id, df=data_source
             )
 
-            prepared = prepare_data_for_dhis2(df=data_snis, target_aoc=dedop_target_aoc)
+            prepared = prepare_data_for_dhis2(df=data_source, target_aoc=target_aoc)
 
             summary = push_data_to_dhis2(
-                dhis2=dedop,
+                dhis2=target,
                 prepared=prepared,
                 dataset_id=current_dataset_id,
                 dry_run=dry_run,
@@ -420,59 +422,60 @@ def process_periods(
 
 @snis_to_dedop_sync.task
 def sync_dataset_orgunits(
-    snis: DHIS2,
-    dedop: DHIS2,
+    source: DHIS2,
+    target: DHIS2,
     dataset_id: str,
     org_unit_ids: list[str] | None,
     allow_deletions: bool,
     dry_run: bool,
 ) -> None:
-    """Synchronize the dataset organisation unit assignments between SNIS and DEDOP.
+    """Synchronize the dataset organisation unit assignments between source and target.
 
-    Org unit *existence* in DEDOP is guaranteed upstream by the daily org unit sync pipeline;
+    Org unit *existence* in the target is guaranteed upstream by the daily org unit sync pipeline;
     this task only reconciles the dataset<->orgUnit assignment. Deletions are destructive and
     gated behind ``allow_deletions`` and ``dry_run``.
 
     Parameters
     ----------
-    snis : DHIS2
-        SNIS client.
-    dedop : DHIS2
-        DEDOP client.
+    source : DHIS2
+        source client.
+    target : DHIS2
+        target client.
     dataset_id : str
         Dataset identifier.
     org_unit_ids : list[str] | None
         Optional restriction to specific org units.
     allow_deletions : bool
-        Whether to unassign org units present in DEDOP but absent from SNIS.
+        Whether to unassign org units present in target but absent from source.
     dry_run : bool
         Simulate without writing.
     """
-    dataset_units_snis = snis.api.get(
+    dataset_units_source = source.api.get(
         endpoint=f"dataSets/{dataset_id}?fields=organisationUnits[id]", use_cache=False
     )
-    existing_ids_snis = {ou["id"] for ou in dataset_units_snis.get("organisationUnits", [])}
+    existing_ids_source = {ou["id"] for ou in dataset_units_source.get("organisationUnits", [])}
 
-    dataset_units_dedop = dedop.api.get(
+    dataset_units_target = target.api.get(
         endpoint=f"dataSets/{dataset_id}?fields=organisationUnits[id]", use_cache=False
     )
-    existing_ids_dedop = {ou["id"] for ou in dataset_units_dedop.get("organisationUnits", [])}
+    existing_ids_target = {ou["id"] for ou in dataset_units_target.get("organisationUnits", [])}
 
     if org_unit_ids is None:
-        to_add = existing_ids_snis - existing_ids_dedop
-        to_delete = existing_ids_dedop - existing_ids_snis
+        to_add = existing_ids_source - existing_ids_target
+        to_delete = existing_ids_target - existing_ids_source
     else:
         scope = set(org_unit_ids)
-        to_add = (existing_ids_snis & scope) - existing_ids_dedop
-        to_delete = (existing_ids_dedop & scope) - existing_ids_snis
+        to_add = (existing_ids_source & scope) - existing_ids_target
+        to_delete = (existing_ids_target & scope) - existing_ids_source
 
     if to_delete and not allow_deletions:
         current_run.log_info(
-            f"{len(to_delete)} orgUnit(s) présents dans DEDOP mais absents de SNIS pour le "
-            f"dataset {dataset_id} — désassignation désactivée (allow_deletions=False)."
+            f"{len(to_delete)} orgUnit(s) présents dans l'instance cible mais absents de "
+            f"l'instance source pour le dataset {dataset_id} — désassignation désactivée "
+            f"(allow_deletions=False)."
         )
     elif to_delete and allow_deletions:
-        url = f"{dedop.api.url}/dataSets/{dataset_id}/organisationUnits"
+        url = f"{target.api.url}/dataSets/{dataset_id}/organisationUnits"
         for ou in sorted(to_delete):
             if dry_run:
                 current_run.log_info(
@@ -480,10 +483,10 @@ def sync_dataset_orgunits(
                 )
                 continue
             try:
-                res = dedop.api.session.delete(url=f"{url}/{ou}")
+                res = target.api.session.delete(url=f"{url}/{ou}")
                 status = getattr(res, "status_code", None)
                 if status in (200, 204):
-                    existing_ids_dedop.discard(ou)
+                    existing_ids_target.discard(ou)
                     current_run.log_info(f"orgUnit {ou} désassigné du dataset {dataset_id}.")
                 else:
                     body = getattr(res, "text", "")
@@ -499,10 +502,10 @@ def sync_dataset_orgunits(
             continue
         endpoint = f"dataSets/{dataset_id}/organisationUnits/{ou}"
         try:
-            res_i = dedop.api.post(endpoint=endpoint)
+            res_i = target.api.post(endpoint=endpoint)
             status_i = getattr(res_i, "status_code", None)
             if status_i in (200, 201, 409):
-                existing_ids_dedop.add(ou)
+                existing_ids_target.add(ou)
             else:
                 current_run.log_error(f"Échec assignation orgUnit {ou} (status={status_i}).")
         except Exception as e:
@@ -511,29 +514,29 @@ def sync_dataset_orgunits(
 
 @snis_to_dedop_sync.task
 def ensure_disaggregation_metadata(
-    snis: DHIS2,
-    dedop: DHIS2,
+    source: DHIS2,
+    target: DHIS2,
     dataset_id: str,
     create_missing_metadata: bool,
     dry_run: bool,
 ) -> dict:
-    """Detect (and optionally create) disaggregation metadata missing in DEDOP.
+    """Detect (and optionally create) disaggregation metadata missing in target.
 
-    Compares, per data element, the real categoryOptionCombos of SNIS vs DEDOP. COCs present
-    in SNIS but missing in DEDOP are created in DEDOP (UIDs preserved) only when
+    Compares, per data element, the real categoryOptionCombos of source vs target. COCs present
+    in the source but missing in the target are created in the target (UIDs preserved) only when
     ``create_missing_metadata`` is enabled and not in ``dry_run``; otherwise affected values
     are skipped and reported.
 
     Parameters
     ----------
-    snis : DHIS2
-        SNIS client.
-    dedop : DHIS2
-        DEDOP client.
+    source : DHIS2
+        source client.
+    target : DHIS2
+        target client.
     dataset_id : str
         Dataset identifier.
     create_missing_metadata : bool
-        Whether to create the missing metadata in DEDOP.
+        Whether to create the missing metadata in target.
     dry_run : bool
         Simulate without writing.
 
@@ -542,21 +545,21 @@ def ensure_disaggregation_metadata(
     dict
         ``{"data_element_ids", "coc_target", "missing", "created"}``.
     """
-    de_snis = _dataset_data_element_ids(snis, dataset_id)
-    de_dedop = _dataset_data_element_ids(dedop, dataset_id)
-    common = sorted(de_snis & de_dedop)
+    de_source = _dataset_data_element_ids(source, dataset_id)
+    de_target = _dataset_data_element_ids(target, dataset_id)
+    common = sorted(de_source & de_target)
 
-    only_snis = de_snis - de_dedop
-    if only_snis:
+    only_source = de_source - de_target
+    if only_source:
         current_run.log_warning(
-            f"{len(only_snis)} dataElement(s) présents dans SNIS mais absents du dataset "
-            f"{dataset_id} de DEDOP — ignorés."
+            f"{len(only_source)} dataElement(s) présents dans l'instance source mais absents "
+            f"du dataset {dataset_id} de l'instance cible — ignorés."
         )
 
-    coc_snis = get_data_element_cocs(snis, common)
-    coc_dedop = get_data_element_cocs(dedop, common)
+    coc_source = get_data_element_cocs(source, common)
+    coc_target = get_data_element_cocs(target, common)
 
-    missing = {de: coc_snis.get(de, set()) - coc_dedop.get(de, set()) for de in common}
+    missing = {de: coc_source.get(de, set()) - coc_target.get(de, set()) for de in common}
     missing = {de: cocs for de, cocs in missing.items() if cocs}
 
     created: list[str] = []
@@ -564,21 +567,21 @@ def ensure_disaggregation_metadata(
         missing_coc_ids = sorted({coc for cocs in missing.values() for coc in cocs})
         if create_missing_metadata and not dry_run:
             current_run.log_info(
-                f"Création de {len(missing_coc_ids)} categoryOptionCombo(s) manquants dans DEDOP "
-                f"pour le dataset {dataset_id}."
+                f"Création de {len(missing_coc_ids)} categoryOptionCombo(s) manquants dans "
+                f"l'instance cible pour le dataset {dataset_id}."
             )
-            created = _create_missing_coc_metadata(snis, dedop, missing_coc_ids)
-            coc_dedop = get_data_element_cocs(dedop, common)
+            created = _create_missing_coc_metadata(source, target, missing_coc_ids)
+            coc_target = get_data_element_cocs(target, common)
         else:
             current_run.log_warning(
-                f"{len(missing_coc_ids)} categoryOptionCombo(s) manquants dans DEDOP pour le "
-                f"dataset {dataset_id} — valeurs correspondantes ignorées "
+                f"{len(missing_coc_ids)} categoryOptionCombo(s) manquants dans l'instance cible "
+                f"pour le dataset {dataset_id} — valeurs correspondantes ignorées "
                 f"(create_missing_metadata={create_missing_metadata}, dry_run={dry_run})."
             )
 
     return {
         "data_element_ids": common,
-        "coc_target": {de: sorted(coc_dedop.get(de, set())) for de in common},
+        "coc_target": {de: sorted(coc_target.get(de, set())) for de in common},
         "missing": {de: sorted(cocs) for de, cocs in missing.items()},
         "created": created,
     }
@@ -586,7 +589,7 @@ def ensure_disaggregation_metadata(
 
 @snis_to_dedop_sync.task
 def fetch_dhis2_data(
-    snis: DHIS2,
+    source: DHIS2,
     dataset_id: str,
     org_unit_ids: list[str] | None,
     extraction_root: str,
@@ -596,16 +599,16 @@ def fetch_dhis2_data(
     use_cache: bool,
     metadata_report: dict,
 ) -> pl.DataFrame:
-    """Fetch data values from SNIS for the given dataset and window.
+    """Fetch data values from source for the given dataset and window.
 
     Extraction is performed from ``extraction_root`` with children included, then post-filtered
     on ``org_unit_ids`` (performance-driven strategy). Rows are restricted to the common data
-    elements and to the (dataElement, COC) pairs available in DEDOP.
+    elements and to the (dataElement, COC) pairs available in target.
 
     Parameters
     ----------
-    snis : DHIS2
-        SNIS client.
+    source : DHIS2
+        source client.
     dataset_id : str
         Dataset identifier.
     org_unit_ids : list[str] | None
@@ -619,7 +622,7 @@ def fetch_dhis2_data(
     automate_sync : bool
         Daily incremental mode (lastUpdated = today).
     use_cache : bool
-        Use cached SNIS responses.
+        Use cached source responses.
     metadata_report : dict
         Output of ``ensure_disaggregation_metadata``.
 
@@ -646,11 +649,11 @@ def fetch_dhis2_data(
 
     cutoff_msg = f", lastUpdated={params['lastUpdated']}" if "lastUpdated" in params else ""
     current_run.log_info(
-        f"Extraction SNIS dataset `{dataset_id}` racine `{extraction_root}` "
+        f"Extraction source dataset `{dataset_id}` racine `{extraction_root}` "
         f"({params['startDate']} → {params['endDate']}{cutoff_msg})"
     )
 
-    response = snis.api.get(endpoint="dataValueSets", params=params, use_cache=use_cache)
+    response = source.api.get(endpoint="dataValueSets", params=params, use_cache=use_cache)
     data = _build_dataframe(response.get("dataValues", []))
 
     if data.is_empty():
@@ -673,7 +676,7 @@ def fetch_dhis2_data(
     selected_de = metadata_report.get("data_element_ids", [])
     data = data.filter(pl.col("data_element_id").is_in(selected_de))
 
-    # Restrict to (dataElement, COC) pairs available in DEDOP.
+    # Restrict to (dataElement, COC) pairs available in target.
     coc_target = metadata_report.get("coc_target", {})
     allowed_rows = [
         {"data_element_id": de, "category_option_combo_id": coc}
@@ -690,7 +693,7 @@ def fetch_dhis2_data(
     blocked = total_before - len(data)
     if blocked:
         current_run.log_warning(
-            f"{blocked} enregistrement(s) ignorés (COC absent de DEDOP) pour le dataset "
+            f"{blocked} enregistrement(s) ignorés (COC absent de l'instance cible) pour le dataset "
             f"`{dataset_id}`."
         )
 
@@ -701,18 +704,20 @@ def fetch_dhis2_data(
 
 
 @snis_to_dedop_sync.task
-def convert_periods(snis: DHIS2, dedop: DHIS2, dataset_id: str, df: pl.DataFrame) -> pl.DataFrame:
-    """Convert period ids when the SNIS and DEDOP period types differ.
+def convert_periods(
+    source: DHIS2, target: DHIS2, dataset_id: str, df: pl.DataFrame
+) -> pl.DataFrame:
+    """Convert period ids when the source and target period types differ.
 
     Conversion is done at the dataSet level and only supports aggregation from a finer to a
     coarser period type. Unsupported pairs raise (explicit dataset failure).
 
     Parameters
     ----------
-    snis : DHIS2
-        SNIS client.
-    dedop : DHIS2
-        DEDOP client.
+    source : DHIS2
+        source client.
+    target : DHIS2
+        target client.
     dataset_id : str
         Dataset identifier.
     df : pl.DataFrame
@@ -726,14 +731,14 @@ def convert_periods(snis: DHIS2, dedop: DHIS2, dataset_id: str, df: pl.DataFrame
     if df.is_empty():
         return df
 
-    period_type_source = _dataset_period_type(snis, dataset_id)
-    period_type_target = _dataset_period_type(dedop, dataset_id)
+    period_type_source = _dataset_period_type(source, dataset_id)
+    period_type_target = _dataset_period_type(target, dataset_id)
     if period_type_source == period_type_target:
         return df
 
     current_run.log_info(
         f"Conversion de période requise pour `{dataset_id}`: "
-        f"{period_type_source} (SNIS) → {period_type_target} (DEDOP)"
+        f"{period_type_source} (source) → {period_type_target} (target)"
     )
 
     periods = df["period"].unique().to_list()
@@ -742,13 +747,13 @@ def convert_periods(snis: DHIS2, dedop: DHIS2, dataset_id: str, df: pl.DataFrame
     if unsupported:
         raise ValueError(
             f"Conversion {period_type_source}→{period_type_target} non supportée pour le dataset "
-            f"{dataset_id} (revoir la configuration du dataset dans DEDOP)."
+            f"{dataset_id} (revoir la configuration du dataset dans l'instance cible)."
         )
 
     df = df.with_columns(pl.col("period").replace_strict(mapping, default=None).alias("period"))
 
     # Aggregate numeric values into the coarser target period.
-    agg_types = _data_element_aggregation_types(dedop, df["data_element_id"].unique().to_list())
+    agg_types = _data_element_aggregation_types(target, df["data_element_id"].unique().to_list())
     df = df.with_columns(pl.col("value").cast(pl.Float64, strict=False).alias("_num"))
     non_numeric = df.filter(pl.col("_num").is_null() & pl.col("value").is_not_null()).height
     if non_numeric:
@@ -789,7 +794,7 @@ def convert_periods(snis: DHIS2, dedop: DHIS2, dataset_id: str, df: pl.DataFrame
 def prepare_data_for_dhis2(df: pl.DataFrame, target_aoc: str) -> dict:
     """Prepare upsert and delete payloads for DHIS2.
 
-    All values are stamped with the DEDOP target attributeOptionCombo. Rows flagged ``deleted``
+    All values are stamped with the target attributeOptionCombo. Rows flagged ``deleted``
     in the source are partitioned into a delete payload for propagation.
 
     Parameters
@@ -797,7 +802,7 @@ def prepare_data_for_dhis2(df: pl.DataFrame, target_aoc: str) -> dict:
     df : pl.DataFrame
         Data values including the ``deleted`` flag.
     target_aoc : str
-        Target (DEDOP) attributeOptionCombo.
+        Target (target) attributeOptionCombo.
 
     Returns
     -------
@@ -1130,13 +1135,13 @@ def _data_element_aggregation_types(dhis2: DHIS2, data_element_ids: list[str]) -
 
 
 def _create_missing_coc_metadata(
-    snis: DHIS2, dedop: DHIS2, missing_coc_ids: list[str]
+    source: DHIS2, target: DHIS2, missing_coc_ids: list[str]
 ) -> list[str]:
-    """Create missing disaggregation metadata in DEDOP, preserving source UIDs.
+    """Create missing disaggregation metadata in the target, preserving source UIDs.
 
     Fetches the full definitions (``:owner``) of the missing categoryOptionCombos and their
-    referenced categoryOptions / categoryCombos from SNIS, then imports them into DEDOP via the
-    metadata API with ``identifier=UID``. Best-effort; the response is logged.
+    referenced categoryOptions / categoryCombos from the source, then imports them into the
+    target via the metadata API with ``identifier=UID``. Best-effort; the response is logged.
 
     Returns
     -------
@@ -1153,7 +1158,7 @@ def _create_missing_coc_metadata(
     chunk_size = 100
     for index in range(0, len(missing_coc_ids), chunk_size):
         chunk = missing_coc_ids[index : index + chunk_size]
-        resp = snis.api.get(
+        resp = source.api.get(
             endpoint="categoryOptionCombos",
             params={
                 "paging": "false",
@@ -1170,8 +1175,8 @@ def _create_missing_coc_metadata(
                 o["id"] for o in coc.get("categoryOptions", []) if o.get("id")
             )
 
-    category_options = _fetch_owner_objects(snis, "categoryOptions", sorted(category_option_ids))
-    category_combos = _fetch_owner_objects(snis, "categoryCombos", sorted(category_combo_ids))
+    category_options = _fetch_owner_objects(source, "categoryOptions", sorted(category_option_ids))
+    category_combos = _fetch_owner_objects(source, "categoryCombos", sorted(category_combo_ids))
 
     payload = {
         "categoryOptions": category_options,
@@ -1179,8 +1184,8 @@ def _create_missing_coc_metadata(
         "categoryOptionCombos": coc_objs,
     }
     try:
-        res = dedop.api.session.post(
-            url=f"{dedop.api.url}/metadata",
+        res = target.api.session.post(
+            url=f"{target.api.url}/metadata",
             json=payload,
             params={
                 "importStrategy": "CREATE_AND_UPDATE",
@@ -1192,15 +1197,15 @@ def _create_missing_coc_metadata(
         status = getattr(res, "status_code", None)
         if status in (200, 201):
             current_run.log_info(
-                f"Métadonnées créées/à jour dans DEDOP: {len(category_options)} categoryOption(s), "
+                f"Métadonnées créées/à jour dans l'instance cible: "
+                f"{len(category_options)} categoryOption(s), "
                 f"{len(category_combos)} categoryCombo(s), {len(coc_objs)} COC."
             )
             return missing_coc_ids
-        current_run.log_error(
-            f"Échec création métadonnées DEDOP (status={status}): {getattr(res, 'text', '')}"
-        )
+        body = getattr(res, "text", "")
+        current_run.log_error(f"Échec création métadonnées target (status={status}): {body}")
     except Exception as e:
-        current_run.log_error(f"Exception lors de la création des métadonnées DEDOP: {e!s}")
+        current_run.log_error(f"Exception lors de la création des métadonnées target: {e!s}")
     return []
 
 
