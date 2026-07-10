@@ -1,8 +1,4 @@
-"""
-Pipeline de synchronisation des dataValues de l'instance source vers l'instance cible.
-
-Voir `PLAN_AMELIORATION.md` pour le détail des choix de conception.
-"""
+"""Pipeline de synchronisation des dataValues de l'instance source vers l'instance cible."""
 
 import json
 import time

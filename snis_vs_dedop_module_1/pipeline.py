@@ -236,9 +236,9 @@ def fetch_organisation_units(snis: DHIS2, dedop: DHIS2) -> pl.DataFrame:
             # Extraire directement les coordonnées du MultiPolygon
             pl.col("geometry")
             .map_elements(
-                lambda geom: eval(geom)["coordinates"][0][0]
-                if isinstance(eval(geom), dict)
-                else None,
+                lambda geom: (
+                    eval(geom)["coordinates"][0][0] if isinstance(eval(geom), dict) else None
+                ),
                 return_dtype=pl.Object,
             )
             .alias("coordinates")
