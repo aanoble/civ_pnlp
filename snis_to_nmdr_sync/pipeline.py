@@ -96,7 +96,7 @@ from utils import (
     type=int,  # type: ignore
     name="Historical period in months to refresh",
     help="Number of months to look back from current month (only when start date is empty).",
-    default=24,
+    default=3,
     required=False,
 )
 @parameter(
@@ -145,14 +145,6 @@ from utils import (
     required=False,
 )
 @parameter(
-    "use_cache",
-    type=bool,  # type: ignore
-    name="Use API source cache",
-    help="Whether to use cached API responses where possible.",
-    default=False,
-    required=False,
-)
-@parameter(
     "automate_sync",
     type=bool,  # type: ignore
     name="Automate synchronization",
@@ -174,22 +166,7 @@ from utils import (
     name="Import strategy",
     help="DHIS2 import strategy for upserts (CREATE, UPDATE, CREATE_AND_UPDATE).",
     default="CREATE_AND_UPDATE",
-    required=False,
-)
-@parameter(
-    "post_batch_size",
-    type=int,  # type: ignore
-    name="Post batch size",
-    help="Chunk size for DHIS2 POST requests.",
-    default=5000,
-    required=False,
-)
-@parameter(
-    "retention_days",
-    type=int,  # type: ignore
-    name="Report retention (days)",
-    help="Number of days of import reports to keep.",
-    default=30,
+    choices=["CREATE", "UPDATE", "CREATE_AND_UPDATE"],
     required=False,
 )
 def snis_to_nmdr_sync(
@@ -211,7 +188,7 @@ def snis_to_nmdr_sync(
     use_cache: bool = False,
     import_mode: str = "CREATE_AND_UPDATE",
     post_batch_size: int = 5000,
-    retention_days: int = 30,
+    retention_days: int = 5,
 ):
     """
     Synchronize data values from source DHIS2 to target DHIS2.
