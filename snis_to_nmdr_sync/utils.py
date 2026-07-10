@@ -220,7 +220,7 @@ def convert_period_id(period: str, source_type: str, target_type: str) -> str | 
         return None
 
     try:
-        source_dt = source_cls(period).datetime
-        return target_cls(source_dt).period
+        source_dt = source_cls.from_string(period).start
+        return str(target_cls.from_date(source_dt))
     except Exception:
         return None

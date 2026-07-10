@@ -1251,7 +1251,7 @@ def _push_chunks(
                 params=request_params,
             )
             status = response.status_code
-            if status == 200:
+            if 200 <= status < 300:
                 break
             if status == 429 or 500 <= status < 600:
                 sleep_s = backoff_base * (2 ** (attempt - 1))
@@ -1263,7 +1263,7 @@ def _push_chunks(
                 continue
             break
 
-        if response is None or response.status_code != 200:
+        if response is None or response.status_code < 200 or response.status_code >= 300:
             aggregated["failed"] = True
             body = response.text if response is not None else "no response"
             aggregated["chunks"].append(

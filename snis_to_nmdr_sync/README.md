@@ -14,7 +14,7 @@ cible l'instance DEDOP/NMDR (`dhis2-nmdr-temp`).
 ## Flux
 
 ```
-check santé + validation AOC cible
+ping server + validation AOC cible
   └─ pour chaque dataset :
        sync assignation dataset⇄orgUnits (suppressions gardées par flag)
        détection COC manquants dans la cible → création optionnelle (consentement)
