@@ -19,6 +19,7 @@ from openhexa.sdk.pipelines.parameter import DHIS2Widget
 from openhexa.toolbox.dhis2 import DHIS2
 from utils import (
     check_server_health,
+    compute_incremental_cutoff,
     convert_period_id,
     get_data_element_cocs,
     last_analytics_update,
@@ -626,8 +627,15 @@ def fetch_dhis2_data(
     pl.DataFrame
         Filtered data values including the ``deleted`` flag.
     """
+    now = datetime.now()
     if automate_sync:
-        cutoff = last_updated or datetime.now()
+        cutoff = compute_incremental_cutoff(now, last_updated)
+        if not last_updated and cutoff.date() != now.date():
+            current_run.log_info(
+                f"Mode rattrapage (backfill) activé: lastUpdated={cutoff:%Y-%m-%d} "
+                f"(filet de sécurité contre les valeurs manquées lors d'un run sauté ou d'une "
+                f"indisponibilité DHIS2)."
+            )
     else:
         cutoff = last_updated
 

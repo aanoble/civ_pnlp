@@ -1,5 +1,6 @@
 from datetime import datetime
 
+from dateutil.relativedelta import relativedelta
 from openhexa.sdk import current_run
 from openhexa.toolbox.dhis2 import DHIS2
 from openhexa.toolbox.dhis2.periods import Day, Month, Quarter, SixMonth, Week, Year
@@ -90,6 +91,41 @@ def parse_cutoff_date(date_str: str) -> datetime:
     except (ValueError, TypeError) as e:
         current_run.log_error(f"Format de date invalide: '{date_str}' - {e!s}")
         raise ValueError(f"Format de date invalide: '{date_str}'. Requis: YYYY-MM-DD") from e
+
+
+def compute_incremental_cutoff(now: datetime, last_updated: datetime | None) -> datetime:
+    """
+    Compute the ``lastUpdated`` cutoff for the daily incremental sync, with periodic backfill.
+
+    An explicit ``last_updated`` always wins (manual backfill). Otherwise, on *backfill ticks*
+    (the 1st, the 15th or the last day of the month, at 06h or 18h) the cutoff is widened to the
+    first day of the previous month; on any other tick it is the current day.
+
+    The periodic backfill is a safety net: a daily incremental that only looks at
+    ``lastUpdated = today`` permanently loses values whenever a run is skipped or the DHIS2
+    platform is unavailable that day. Re-pulling from the previous month on a few ticks recovers
+    those missed values without re-syncing the full history on every run.
+
+    Parameters
+    ----------
+    now : datetime
+        The current datetime (injected for testability).
+    last_updated : datetime | None
+        An explicit manual cutoff; when provided it is returned as-is.
+
+    Returns
+    -------
+    datetime
+        The ``lastUpdated`` cutoff to apply.
+    """
+    if last_updated:
+        return last_updated
+    month_end_day = (now + relativedelta(day=31)).day
+    is_backfill_tick = now.day in (1, 15, month_end_day) and now.hour in (6, 18)
+    if is_backfill_tick:
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        return month_start - relativedelta(months=1)
+    return now
 
 
 def validate_dataset(dhis2: DHIS2, dataset_id: str) -> bool:

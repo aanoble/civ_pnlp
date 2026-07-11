@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils import (
     PERIOD_GRANULARITY,
     PERIOD_TYPE_TO_CLASS,
+    compute_incremental_cutoff,
     convert_period_id,
     parse_cutoff_date,
 )
@@ -96,6 +97,43 @@ def test_parse_cutoff_date_non_string_inputs(value: str) -> None:
 def test_convert_period_id_unsupported(period: str, source: str, target: str) -> None:
     """Unsupported conversions return None."""
     assert convert_period_id(period, source, target) is None
+
+
+def test_compute_incremental_cutoff_explicit_last_updated_wins() -> None:
+    """An explicit last_updated is always returned unchanged, even on a backfill tick."""
+    now = datetime(2024, 3, 15, 6, 0, 0)  # would otherwise be a backfill tick
+    explicit = datetime(2023, 1, 1)
+    assert compute_incremental_cutoff(now, explicit) == explicit
+
+
+@pytest.mark.parametrize(
+    ("now", "expected"),
+    [
+        # Backfill ticks: 1st / 15th / last day of month at 06h or 18h -> previous month start.
+        (datetime(2024, 3, 1, 6, 0), datetime(2024, 2, 1)),
+        (datetime(2024, 3, 15, 18, 0), datetime(2024, 2, 1)),
+        (datetime(2024, 3, 31, 6, 0), datetime(2024, 2, 1)),
+        (datetime(2024, 2, 29, 18, 0), datetime(2024, 1, 1)),  # leap-year last day
+        (datetime(2024, 1, 1, 6, 0), datetime(2023, 12, 1)),  # crosses year boundary
+    ],
+)
+def test_compute_incremental_cutoff_backfill_ticks(now: datetime, expected: datetime) -> None:
+    """On backfill ticks the cutoff widens to the first day of the previous month."""
+    assert compute_incremental_cutoff(now, None) == expected
+
+
+@pytest.mark.parametrize(
+    "now",
+    [
+        datetime(2024, 3, 2, 6, 0),  # not a trigger day
+        datetime(2024, 3, 15, 7, 0),  # trigger day but wrong hour
+        datetime(2024, 3, 1, 0, 0),  # trigger day but wrong hour
+        datetime(2024, 3, 10, 18, 0),  # trigger hour but not a trigger day
+    ],
+)
+def test_compute_incremental_cutoff_regular_ticks(now: datetime) -> None:
+    """Outside backfill ticks the cutoff is the current day."""
+    assert compute_incremental_cutoff(now, None) == now
 
 
 def test_period_type_tables_are_consistent() -> None:
