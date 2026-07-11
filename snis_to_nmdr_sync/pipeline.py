@@ -542,6 +542,19 @@ def ensure_disaggregation_metadata(
     missing = {de: coc_source.get(de, set()) - coc_target.get(de, set()) for de in common}
     missing = {de: cocs for de, cocs in missing.items() if cocs}
 
+    # Audit: dataElements présents dans la cible dont l'ensemble de COC diffère de la source
+    # (dans les deux sens), pour tracer précisément les divergences de désagrégation.
+    divergent = {
+        de: {
+            "only_source": sorted(coc_source.get(de, set()) - coc_target.get(de, set())),
+            "only_target": sorted(coc_target.get(de, set()) - coc_source.get(de, set())),
+        }
+        for de in common
+    }
+    divergent = {de: d for de, d in divergent.items() if d["only_source"] or d["only_target"]}
+    if divergent:
+        _log_coc_divergences(source, target, dataset_id, divergent)
+
     created: list[str] = []
     if missing:
         missing_coc_ids = sorted({coc for cocs in missing.values() for coc in cocs})
@@ -563,6 +576,7 @@ def ensure_disaggregation_metadata(
         "data_element_ids": common,
         "coc_target": {de: sorted(coc_target.get(de, set())) for de in common},
         "missing": {de: sorted(cocs) for de, cocs in missing.items()},
+        "divergent": divergent,
         "created": created,
     }
 
@@ -1223,6 +1237,116 @@ def _fetch_owner_objects(dhis2: DHIS2, resource: str, ids: list[str]) -> list[di
         )
         objects.extend(resp.get(resource, []))
     return objects
+
+
+def _fetch_object_names(dhis2: DHIS2, resource: str, ids: list[str]) -> dict[str, str]:
+    """
+    Resolve the display name of metadata objects by id.
+
+    Parameters
+    ----------
+    dhis2 : DHIS2
+        The DHIS2 instance to query.
+    resource : str
+        The metadata resource (e.g. ``"dataElements"``, ``"categoryOptionCombos"``).
+    ids : list[str]
+        The object ids to resolve.
+
+    Returns
+    -------
+    dict[str, str]
+        Mapping ``id -> name`` (ids absent from the instance are simply omitted).
+    """
+    names: dict[str, str] = {}
+    if not ids:
+        return names
+    chunk_size = 100
+    for index in range(0, len(ids), chunk_size):
+        chunk = ids[index : index + chunk_size]
+        resp = dhis2.api.get(
+            endpoint=resource,
+            params={
+                "paging": "false",
+                "fields": "id,name",
+                "filter": f"id:in:[{','.join(chunk)}]",
+            },
+            use_cache=False,
+        )
+        for obj in resp.get(resource, []):
+            names[obj["id"]] = obj.get("name", "")
+    return names
+
+
+def _format_coc_list(coc_ids: list[str], names: dict[str, str], limit: int = 20) -> str:
+    """
+    Format a list of categoryOptionCombo ids as ``name (id)`` (capped to ``limit``).
+
+    Returns
+    -------
+    str
+        The human-readable list, with a ``… (+N)`` suffix when truncated.
+    """
+    shown = coc_ids[:limit]
+    formatted = ", ".join(f"{names.get(c) or '?'} ({c})" for c in shown)
+    if len(coc_ids) > limit:
+        formatted += f", … (+{len(coc_ids) - limit})"
+    return formatted
+
+
+def _log_coc_divergences(
+    source: DHIS2,
+    target: DHIS2,
+    dataset_id: str,
+    divergent: dict[str, dict[str, list[str]]],
+) -> None:
+    """
+    Emit audit warnings for target dataElements whose COC set differs from the source.
+
+    One summary warning is emitted, followed by one warning per dataElement detailing the
+    categoryOptionCombos only present in the source (values ignored) and those only present in
+    the target. Names are resolved for readability.
+
+    Parameters
+    ----------
+    source : DHIS2
+        source client.
+    target : DHIS2
+        target client.
+    dataset_id : str
+        Dataset identifier.
+    divergent : dict[str, dict[str, list[str]]]
+        Mapping ``data_element_id -> {"only_source": [...], "only_target": [...]}``.
+    """
+    de_names = _fetch_object_names(target, "dataElements", list(divergent))
+    coc_ids = sorted(
+        {c for d in divergent.values() for c in (*d["only_source"], *d["only_target"])}
+    )
+    # A source-only COC is unknown to the target and vice versa: resolve names from both.
+    coc_names = {
+        **_fetch_object_names(target, "categoryOptionCombos", coc_ids),
+        **_fetch_object_names(source, "categoryOptionCombos", coc_ids),
+    }
+
+    current_run.log_warning(
+        f"{len(divergent)} dataElement(s) présents dans l'instance cible avec des "
+        f"categoryOptionCombo(s) divergents de la source pour le dataset {dataset_id} "
+        f"(détail par dataElement ci-dessous)."
+    )
+    for de in sorted(divergent):
+        d = divergent[de]
+        de_label = f"{de_names.get(de) or '?'} ({de})"
+        parts: list[str] = []
+        if d["only_source"]:
+            parts.append(
+                f"{len(d['only_source'])} présent(s) en source/absent(s) en cible "
+                f"(valeurs ignorées): {_format_coc_list(d['only_source'], coc_names)}"
+            )
+        if d["only_target"]:
+            parts.append(
+                f"{len(d['only_target'])} présent(s) en cible/absent(s) en source: "
+                f"{_format_coc_list(d['only_target'], coc_names)}"
+            )
+        current_run.log_warning(f"[AUDIT COC] dataElement {de_label} — " + " ; ".join(parts))
 
 
 def _push_chunks(
