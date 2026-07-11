@@ -5,7 +5,8 @@ from openhexa.sdk import current_run
 
 
 def parse_cutoff_date(date_str: str) -> datetime:
-    """Valide et convertit une date ISO en objet datetime.
+    """
+    Valide et convertit une date ISO en objet datetime.
 
     Args:
         date_str: Chaîne de date au format YYYY-MM-DD
@@ -24,7 +25,8 @@ def parse_cutoff_date(date_str: str) -> datetime:
 
 
 def check_metabase_server_health(metabase: Metabase) -> bool:
-    """Check if the DHIS2 server is responding.
+    """
+    Check if the DHIS2 server is responding.
 
     Parameters
     ----------

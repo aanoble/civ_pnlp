@@ -19,7 +19,8 @@ from openhexa.toolbox.dhis2 import DHIS2
 
 
 class OrgUnitCounts(TypedDict):
-    """Count of organisation units by import action type.
+    """
+    Count of organisation units by import action type.
 
     Attributes
     ----------
@@ -40,7 +41,8 @@ class OrgUnitCounts(TypedDict):
 
 
 class SyncPlan(TypedDict):
-    """Structured plan for synchronising organisation units between SNIS and Nmdr.
+    """
+    Structured plan for synchronising organisation units between SNIS and Nmdr.
 
     Attributes
     ----------
@@ -152,7 +154,8 @@ def snis_to_nmdr_sync_orgunits(
 
 @snis_to_nmdr_sync_orgunits.task
 def fetch_org_units(dhis2: DHIS2) -> pl.DataFrame:
-    """Fetch organisation units from DHIS2.
+    """
+    Fetch organisation units from DHIS2.
 
     Parameters
     ----------
@@ -179,7 +182,8 @@ def fetch_org_units(dhis2: DHIS2) -> pl.DataFrame:
 def build_sync_plan(
     ou_snis: pl.DataFrame, ou_nmdr: pl.DataFrame, sync_existing_geometries: bool
 ) -> SyncPlan:
-    """Compare source and target org units and build a structured sync plan.
+    """
+    Compare source and target org units and build a structured sync plan.
 
     Parameters
     ----------
@@ -282,7 +286,8 @@ def build_sync_plan(
 
 @snis_to_nmdr_sync_orgunits.task
 def build_orgunit_payload(sync_plan: SyncPlan) -> list[dict[str, Any]]:
-    """Extract the DHIS2 payload from the sync plan.
+    """
+    Extract the DHIS2 payload from the sync plan.
 
     Parameters
     ----------
@@ -388,7 +393,8 @@ def push_data_to_dhis2(
     import_mode: str = "CREATE_AND_UPDATE",
     post_batch_size: int = 5000,
 ) -> dict[str, Any]:
-    """Send org unit payload to DHIS2 with chunking, retries and structured reporting.
+    """
+    Send org unit payload to DHIS2 with chunking, retries and structured reporting.
 
     Parameters
     ----------

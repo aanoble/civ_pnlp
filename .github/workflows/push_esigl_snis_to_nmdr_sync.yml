@@ -1,12 +1,12 @@
-name: Push snis_to_dedop_sync
+name: Push snis_to_nmdr_sync
 
 on:
   push:
     branches:
       - main
     paths:
-      - ".github/workflows/push_snis_to_dedop_sync.yaml"
-      - "snis_to_dedop_sync/**"
+      - ".github/workflows/push_snis_to_nmdr_sync.yaml"
+      - "snis_to_nmdr_sync/**"
 
 jobs:
   deploy:
@@ -27,8 +27,8 @@ jobs:
           token: ${{ secrets.OH_TOKEN }}
       - name: Push pipeline to OpenHEXA
         run: |
-          openhexa pipelines push snis_to_dedop_sync \
-            --code "snis-to-dedop-sync" \
+          openhexa pipelines push snis_to_nmdr_sync \
+            --code "snis-to-nmdr-sync" \
             --description "${{ github.event.head_commit.message }}" \
             --link "https://github.com/aanoble/civ_pnlp/commit/${{ github.sha }}" \
             --yes

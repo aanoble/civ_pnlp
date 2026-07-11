@@ -7,6 +7,9 @@ requires-python = ">=3.11"
 dependencies = [
     "openhexa-toolbox>=2.0.0",
     "openhexa.sdk",
+    "openpyxl>=3.1.5",
+    "polars>=1.26.0",
+    "ruff>=0.15.13",
 ]
 
 [tool.ruff]
@@ -57,6 +60,8 @@ ignore = [
     "D401", # First line should be in imperative mood
     "D413", # Missing blank line after last section
     "D203", # 1 blank line required before class docstring
+    "D212", # Multi-line docstring summary should start at the first line
+    "D213", # Multi-line docstring summary should start at the second line
     "SIM108", # Use ternary operators
     "SIM102", # Use a single if statement instead of nested if statements
     "SIM114", # Combine `if` branches
@@ -64,7 +69,6 @@ ignore = [
     "DOC502", # Raised exception is not explicitly raised: {id}
     "RUF022", # `__all__` is not sorted
     "RUF005", # Consider expression instead of concatenation
-    "PD901", # Avoid using the generic variable name df for dataframes
     "PLR0904", # Too many public methods ({methods} > {max_methods})
     "PLR0911", # Too many return statements ({returns} > {max_returns})
     "PLR0912", # Too many branches ({branches} > {max_branches})
@@ -73,6 +77,7 @@ ignore = [
     "PLR0915", # Too many statements ({statements} > {max_statements})
     "PLR0916", # Too many Boolean expressions ({expressions} > {max_expressions})
     "PLR1702", # Too many nested blocks ({blocks} > {max_blocks}),
+    "PLW0717", # Too many statements in try clause
     "COM812", # Missing trailing comma
 ]
 
@@ -97,5 +102,5 @@ reportOptionalSubscript = false
 reportOptionalMemberAccess = false
 exclude = [
     "other files/",
-    "superset_dashboard/",
+    "superset_dashboard/", "**/node_modules", "**/__pycache__", "**/.*", ".venv",
 ]

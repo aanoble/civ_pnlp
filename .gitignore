@@ -173,3 +173,17 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+
+# other files and folders
+node_modules/
+notebooks/
+*.js
+*.json
+*.docx
+
+# macOS
+.DS_Store
+
+# Plan d'amélioration
+snis_to_nmdr_sync/PLAN_AMELIORATION.md
