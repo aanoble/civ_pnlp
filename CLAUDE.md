@@ -80,6 +80,7 @@ Il n'y a **pas de suite de tests globale** ; seuls certains pipelines ont un dos
 ## Domaine DHIS2 — règles clés
 
 - **UID identiques** entre SNIS et DEDOP pour `dataSets` et `dataElements` → pas de mapping à ces niveaux. Le risque d'alignement porte sur les **categoryOptionCombos (COC)**, les **attributeOptionCombos (AOC)** et les **periodType**.
+- **COC valides = résolus au niveau du `dataSet`** : un `dataSetElement` peut **surcharger le `categoryCombo`** d'un dataElement ; les dataValues sont validées contre le combo applicable (override sinon combo propre du dataElement). Résoudre les COC via le seul `dataElements[categoryCombo]` rate ces overrides et classe à tort comme « manquants » des COC existants (→ valeurs filtrées). Utiliser `get_dataset_element_cocs` (cf. `snis_to_nmdr_sync/utils.py`).
 - Push de données via l'endpoint `dataValueSets` (chunks + retry/backoff sur 429/5xx). Vérifier `importCount` (imported/updated/ignored/deleted) et les `conflicts` dans la réponse.
 - Les valeurs `ignored` signalent souvent des métadonnées manquantes côté cible (COC/AOC/OU inexistants). Toujours reporter ces compteurs.
 - Pour les **suppressions**, extraire avec `includeDeleted=True` et propager côté cible (alignement source↔cible attendu).
