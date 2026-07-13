@@ -221,6 +221,53 @@ def get_data_element_cocs(dhis2: DHIS2, data_element_ids: list[str]) -> dict[str
     return result
 
 
+def get_dataset_element_cocs(dhis2: DHIS2, dataset_id: str) -> dict[str, set[str]]:
+    """
+    Return, for each data element of a dataset, the set of valid categoryOptionCombo ids.
+
+    Within a dataSet, the categoryCombo that applies to a data element is the
+    ``dataSetElement`` override when one is set, otherwise the data element's own
+    ``categoryCombo``. Data values are validated against that *applicable* combo, so the COC
+    set must be resolved at the dataSet level: resolving it from the data element alone (as
+    ``get_data_element_cocs`` does) misses per-dataSet disaggregation overrides and wrongly
+    flags COCs that do exist in the instance as missing.
+
+    Parameters
+    ----------
+    dhis2 : DHIS2
+        The DHIS2 instance to query.
+    dataset_id : str
+        The dataset whose dataSetElements are resolved.
+
+    Returns
+    -------
+    dict[str, set[str]]
+        Mapping ``data_element_id -> {categoryOptionCombo_id, ...}``.
+    """
+    response = dhis2.api.get(
+        endpoint=f"dataSets/{dataset_id}",
+        params={
+            "fields": (
+                "dataSetElements[dataElement[id,categoryCombo[categoryOptionCombos[id]]],"
+                "categoryCombo[categoryOptionCombos[id]]]"
+            )
+        },
+        use_cache=False,
+    )
+
+    result: dict[str, set[str]] = {}
+    for dse in response.get("dataSetElements", []):
+        data_element = dse.get("dataElement") or {}
+        de_id = data_element.get("id")
+        if not de_id:
+            continue
+        # dataSetElement.categoryCombo is the override; fall back to the data element's own.
+        combo = dse.get("categoryCombo") or data_element.get("categoryCombo") or {}
+        cocs = combo.get("categoryOptionCombos", [])
+        result[de_id] = {coc["id"] for coc in cocs if coc.get("id")}
+    return result
+
+
 def convert_period_id(period: str, source_type: str, target_type: str) -> str | None:
     """
     Convert a DHIS2 period id from a source period type to a target period type.

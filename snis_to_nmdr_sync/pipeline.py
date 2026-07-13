@@ -21,7 +21,7 @@ from utils import (
     check_server_health,
     compute_incremental_cutoff,
     convert_period_id,
-    get_data_element_cocs,
+    get_dataset_element_cocs,
     last_analytics_update,
     parse_cutoff_date,
     validate_aoc_exists,
@@ -537,8 +537,13 @@ def ensure_disaggregation_metadata(
             f"du dataset {dataset_id} de l'instance cible - ignorés."
         )
 
-    coc_source = get_data_element_cocs(source, common)
-    coc_target = get_data_element_cocs(target, common)
+    # COCs are resolved at the dataSet level so that per-dataSet categoryCombo overrides
+    # (dataSetElement) are honored; resolving from the data element alone would wrongly flag
+    # disaggregation COCs that do exist in the target as missing.
+    coc_source_all = get_dataset_element_cocs(source, dataset_id)
+    coc_target_all = get_dataset_element_cocs(target, dataset_id)
+    coc_source = {de: coc_source_all.get(de, set()) for de in common}
+    coc_target = {de: coc_target_all.get(de, set()) for de in common}
 
     missing = {de: coc_source.get(de, set()) - coc_target.get(de, set()) for de in common}
     missing = {de: cocs for de, cocs in missing.items() if cocs}
@@ -565,7 +570,8 @@ def ensure_disaggregation_metadata(
                 f"l'instance cible pour le dataset {dataset_id}."
             )
             created = _create_missing_coc_metadata(source, target, missing_coc_ids)
-            coc_target = get_data_element_cocs(target, common)
+            coc_target_all = get_dataset_element_cocs(target, dataset_id)
+            coc_target = {de: coc_target_all.get(de, set()) for de in common}
         else:
             current_run.log_warning(
                 f"{len(missing_coc_ids)} categoryOptionCombo(s) manquants dans l'instance cible "

@@ -72,6 +72,15 @@ Règles SDK :
   (niveau national) + `include_children` puis **post-filtrer** sur `org_unit_id` est un **choix
   de performance** (plus rapide qu'extraire OU par OU). Exposer cette racine en `@parameter`
   (défaut = racine nationale) plutôt qu'une constante en dur.
+- **COC valides = résolus au niveau du dataSet, pas du dataElement** : dans un `dataSet`, un
+  `dataSetElement` peut **surcharger (override) le `categoryCombo`** d'un dataElement ; les
+  dataValues sont validées contre le combo *applicable* (override s'il existe, sinon le combo
+  propre du dataElement). Résoudre les COC via `dataElements[categoryCombo[...]]` seul rate ces
+  overrides et classe à tort comme « manquants » des COC qui existent bien dans l'instance
+  (→ valeurs filtrées, quasi rien de poussé). Résoudre via
+  `dataSets/{id}?fields=dataSetElements[dataElement[id,categoryCombo[categoryOptionCombos[id]]],categoryCombo[categoryOptionCombos[id]]]`
+  avec fallback sur le combo du dataElement (cf. `get_dataset_element_cocs` dans
+  `snis_to_nmdr_sync/utils.py`).
 - **COC manquant côté cible** (catégorie nouvelle/ajoutée) → **créer** les métadonnées dans la
   cible en préservant les UID source (categoryOptions → categories → categoryCombos →
   régénération des COC), puis pousser — **uniquement si un paramètre booléen de consentement**
@@ -109,6 +118,7 @@ Règles SDK :
 - [ ] Création de métadonnées côté cible **gardée par un flag de consentement** (`create_missing_metadata`).
 - [ ] AOC écrit = **AOC cible (DEDOP)**, pas l'AOC source.
 - [ ] Comparaisons de métadonnées faites sur les **vrais objets** (pas `set()` sur une chaîne d'ID).
+- [ ] COC valides résolus **au niveau du dataSet** (override `dataSetElement.categoryCombo` honoré, fallback dataElement), pas via le seul `categoryCombo` du dataElement.
 - [ ] COC/AOC/OU cibles vérifiés/créés avant push ; `ignored` reporté.
 - [ ] Suppressions propagées ; pas de `fill_null("0")` non justifié.
 - [ ] `periodType` source vs cible géré explicitement.
