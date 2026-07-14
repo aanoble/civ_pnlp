@@ -273,7 +273,9 @@ def snis_to_nmdr_sync(
     dataset_ids = list(dataset_id) if dataset_id else DATASET_IDS
     org_unit_ids = list(org_unit_id) if org_unit_id else None
 
-    failed_datasets: list[str] = []
+    prevalidation_failures: list[str] = []
+    summaries: list = []
+    terminals: list = []
 
     for current_dataset_id in dataset_ids:
         current_run.log_info(f"Traitement du dataset `{current_dataset_id}`")
@@ -281,75 +283,67 @@ def snis_to_nmdr_sync(
         valid_source = validate_dataset(source, current_dataset_id)
         valid_target = validate_dataset(target, current_dataset_id)
         if not (valid_source and valid_target):
-            failed_datasets.append(current_dataset_id)
+            prevalidation_failures.append(current_dataset_id)
             continue
 
-        try:
-            sync_dataset_orgunits(
-                source=source,
-                target=target,
-                dataset_id=current_dataset_id,
-                org_unit_ids=org_unit_ids,
-                allow_deletions=sync_orgunit_deletions,
-                dry_run=dry_run,
-            )
-
-            metadata_report = ensure_disaggregation_metadata(
-                source=source,
-                target=target,
-                dataset_id=current_dataset_id,
-                create_missing_metadata=create_missing_metadata,
-                dry_run=dry_run,
-            )
-
-            data_source = fetch_dhis2_data(
-                source=source,
-                dataset_id=current_dataset_id,
-                org_unit_ids=org_unit_ids,
-                extraction_root=extraction_root_org_unit,
-                periods_range=periods_range,
-                last_updated=last_updated_dt,
-                automate_sync=automate_sync,
-                use_cache=use_cache,
-                metadata_report=metadata_report,
-            )
-
-            data_source = convert_periods(
-                source=source, target=target, dataset_id=current_dataset_id, df=data_source
-            )
-
-            prepared = prepare_data_for_dhis2(df=data_source, target_aoc=target_aoc)
-
-            summary = push_data_to_dhis2(
-                dhis2=target,
-                prepared=prepared,
-                dataset_id=current_dataset_id,
-                dry_run=dry_run,
-                import_mode=import_mode,
-                post_batch_size=post_batch_size,
-            )
-
-            write = write_import_report(
-                (Path(output_directory) / current_dataset_id),
-                prepared,
-                summary,
-                metadata_report,
-            )
-            cleanup_old_directory_files(
-                (Path(output_directory) / current_dataset_id), write, retention_days
-            )
-
-            raise_on_push_failure(summary, current_dataset_id)
-
-        except Exception as err:
-            current_run.log_error(f"Échec du traitement du dataset `{current_dataset_id}`: {err!s}")
-            failed_datasets.append(current_dataset_id)
-
-    if failed_datasets:
-        raise RuntimeError(
-            f"Synchronisation terminée avec des erreurs sur les datasets: "
-            f"{', '.join(sorted(set(failed_datasets)))}"
+        sync_dataset_orgunits(
+            source=source,
+            target=target,
+            dataset_id=current_dataset_id,
+            org_unit_ids=org_unit_ids,
+            allow_deletions=sync_orgunit_deletions,
+            dry_run=dry_run,
         )
+
+        metadata_report = ensure_disaggregation_metadata(
+            source=source,
+            target=target,
+            dataset_id=current_dataset_id,
+            create_missing_metadata=create_missing_metadata,
+            dry_run=dry_run,
+        )
+
+        data_source = fetch_dhis2_data(
+            source=source,
+            dataset_id=current_dataset_id,
+            org_unit_ids=org_unit_ids,
+            extraction_root=extraction_root_org_unit,
+            periods_range=periods_range,
+            last_updated=last_updated_dt,
+            automate_sync=automate_sync,
+            use_cache=use_cache,
+            metadata_report=metadata_report,
+        )
+
+        data_source = convert_periods(
+            source=source, target=target, dataset_id=current_dataset_id, df=data_source
+        )
+
+        prepared = prepare_data_for_dhis2(df=data_source, target_aoc=target_aoc)
+
+        summary = push_data_to_dhis2(
+            dhis2=target,
+            prepared=prepared,
+            dataset_id=current_dataset_id,
+            dry_run=dry_run,
+            import_mode=import_mode,
+            post_batch_size=post_batch_size,
+        )
+
+        write = write_import_report(
+            (Path(output_directory) / current_dataset_id),
+            prepared,
+            summary,
+            metadata_report,
+        )
+        cleanup = cleanup_old_directory_files(
+            (Path(output_directory) / current_dataset_id), write, retention_days
+        )
+
+        summaries.append(summary)
+        terminals.append(cleanup)
+
+    finalize_sync(prevalidation_failures, *summaries, *terminals)
 
 
 @snis_to_nmdr_sync.task
@@ -909,6 +903,7 @@ def push_data_to_dhis2(
     deletes = prepared.get("deletes", [])
 
     aggregated: dict = {
+        "dataset_id": dataset_id,
         "status": "completed",
         "import_strategy": import_mode,
         "dry_run": dry_run,
@@ -1000,19 +995,31 @@ def write_import_report(
 
 
 @snis_to_nmdr_sync.task
-def raise_on_push_failure(summary: dict, dataset_id: str) -> None:
+def finalize_sync(prevalidation_failures: list[str], *results: object) -> None:
     """
-    Raise if the push summary reports a hard failure.
+    Aggregate every dataset outcome and report failures, at the very end.
 
     Parameters
     ----------
-    summary : dict
-        Import summary returned by ``push_data_to_dhis2``.
-    dataset_id : str
-        Dataset identifier (for the error message).
+    prevalidation_failures : list[str]
+        Dataset ids skipped because they are missing from the source or target instance.
+    *results : object
+        Per-dataset push summaries (``dict``) and terminal cleanup results (``None``); only the
+        summaries carry an import outcome.
     """
-    if summary.get("failed"):
-        raise RuntimeError(f"Échec d'import DHIS2 pour le dataset `{dataset_id}`.")
+    summaries = [r for r in results if isinstance(r, dict)]
+    push_failures = [s.get("dataset_id", "?") for s in summaries if s.get("failed")]
+    failed = sorted(set(prevalidation_failures) | set(push_failures))
+    succeeded = len(summaries) - len(push_failures)
+
+    current_run.log_info(
+        f"Synchronisation terminée: {succeeded} dataset(s) importé(s), {len(failed)} en échec."
+    )
+    if failed:
+        current_run.log_error(
+            f"Datasets en échec sur cette exécution (seront réessayés au prochain run planifié): "
+            f"{', '.join(failed)}"
+        )
 
 
 @snis_to_nmdr_sync.task
@@ -1374,6 +1381,34 @@ def _log_coc_divergences(
         current_run.log_warning(f"[AUDIT COC] dataElement {de_label} — " + " ; ".join(parts))
 
 
+def _is_retryable_push_response(response: object) -> bool:
+    """
+    Tell whether a failed dataValueSets response is worth retrying (transient server error).
+
+    Parameters
+    ----------
+    response : object
+        The HTTP response returned by the POST.
+
+    Returns
+    -------
+    bool
+        True if the request should be retried.
+    """
+    status = getattr(response, "status_code", None)
+    if status == 429 or (status is not None and 500 <= status < 600):
+        return True
+    if status == 409:
+        try:
+            body = response.json()  # type: ignore[attr-defined]
+        except Exception:
+            body = {}
+        inner = body.get("response", body) if isinstance(body, dict) else {}
+        description = str(inner.get("description", "") if isinstance(inner, dict) else "").lower()
+        return "flush" in description or "batchhandler" in description
+    return False
+
+
 def _push_chunks(
     dhis2: DHIS2,
     dataset_id: str,
@@ -1402,7 +1437,7 @@ def _push_chunks(
             status = response.status_code
             if 200 <= status < 300:
                 break
-            if status == 429 or 500 <= status < 600:
+            if _is_retryable_push_response(response):
                 sleep_s = backoff_base * (2 ** (attempt - 1))
                 current_run.log_warning(
                     f"[{label}] chunk {idx} tentative {attempt}/{max_retries} échouée "
