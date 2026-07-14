@@ -149,7 +149,11 @@ from utils import (
     "automate_sync",
     type=bool,  # type: ignore
     name="Automate synchronization",
-    help="Daily incremental mode: fetch records updated today (lastUpdated = today).",
+    help=(
+        "Daily incremental mode: fetch every record updated since the cutoff (lastUpdated), "
+        "across all periods (the months_back window is ignored so retroactive corrections to "
+        "older periods are captured)."
+    ),
     default=False,
     required=False,
 )
@@ -649,18 +653,25 @@ def fetch_dhis2_data(
         "dataSet": dataset_id,
         "orgUnit": extraction_root,
         "children": "true",
-        "startDate": periods_range[0].strftime("%Y-%m-%d"),
-        "endDate": periods_range[-1].strftime("%Y-%m-%d"),
         "includeDeleted": "true",
     }
-    if cutoff is not None:
-        params["lastUpdated"] = cutoff.strftime("%Y-%m-%d")
 
-    cutoff_msg = f", lastUpdated={params['lastUpdated']}" if "lastUpdated" in params else ""
-    current_run.log_info(
-        f"Extraction source dataset `{dataset_id}` racine `{extraction_root}` "
-        f"({params['startDate']} → {params['endDate']}{cutoff_msg})"
-    )
+    if automate_sync:
+        params["lastUpdated"] = cutoff.strftime("%Y-%m-%d")
+        current_run.log_info(
+            f"Extraction source dataset `{dataset_id}` racine `{extraction_root}` "
+            f"(incrémental: lastUpdated={params['lastUpdated']}, toutes périodes)"
+        )
+    else:
+        params["startDate"] = periods_range[0].strftime("%Y-%m-%d")
+        params["endDate"] = periods_range[-1].strftime("%Y-%m-%d")
+        if cutoff is not None:
+            params["lastUpdated"] = cutoff.strftime("%Y-%m-%d")
+        cutoff_msg = f", lastUpdated={params['lastUpdated']}" if "lastUpdated" in params else ""
+        current_run.log_info(
+            f"Extraction source dataset `{dataset_id}` racine `{extraction_root}` "
+            f"({params['startDate']} → {params['endDate']}{cutoff_msg})"
+        )
 
     response = source.api.get(endpoint="dataValueSets", params=params, use_cache=use_cache)
     data = _build_dataframe(response.get("dataValues", []))
