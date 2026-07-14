@@ -49,7 +49,6 @@ from product_aliases import PRODUCT_CODE_ALIASES
 from queries import QUERY_ETAT_STOCK, QUERY_FACILITIES, QUERY_PROMPTITUDE
 from utils import check_metabase_server_health, compute_extraction_window
 
-TRACEURS_SHEET = "Traceurs"
 ORGUNIT_SHEET = "OrgUnit"
 PRODUCT_TYPE_SHEET = "R ou G"
 OU_GROUP_UID = "nJ1jXZxufek"
@@ -89,6 +88,15 @@ OU_GROUP_UID = "nJ1jXZxufek"
     default="metabase eSIGL/data/ressources/Fichier mapping OrgUnit eSIGL DHIS2.xlsx",
     required=True,
     directory="metabase eSIGL/data/ressources/mapping_orgunit_esigl_dhis2/",
+)
+@parameter(
+    "fp_traceurs",
+    type=File,
+    name="Liste des produits traceurs",
+    help="Fichier `annee,code_produit` (CSV/XLSX) des produits traceurs par année",
+    default="metabase eSIGL/data/ressources/produits_traceurs/produits_traceurs.xlsx",
+    required=True,
+    directory="metabase eSIGL/data/ressources/produits_traceurs/",
 )
 @parameter(
     "fp_site_attendus",
@@ -182,6 +190,7 @@ def esigl_import_dhis2(
     dhis2_connection: DHIS2Connection,
     metabase_connection: CustomConnection,
     fp_ou_mapping: File,
+    fp_traceurs: File,
     output_directory: str,
     dataset_id: str = TARGET_DATASET_ID,
     fp_site_attendus: File | None = None,
@@ -208,7 +217,9 @@ def esigl_import_dhis2(
     metabase_connection : CustomConnection
         Connexion Metabase source (eSIGL).
     fp_ou_mapping : File
-        Mapping OrgUnit + feuilles Traceurs / R ou G (XLSX).
+        Mapping OrgUnit + feuille R ou G (XLSX).
+    fp_traceurs : File
+        Liste des produits traceurs par année (``annee, code_produit``).
     output_directory : str
         Répertoire de sortie des rapports.
     dataset_id : str
@@ -238,7 +249,7 @@ def esigl_import_dhis2(
     post_batch_size : int
         Taille des lots POST DHIS2.
     """
-    mappings = read_mappings(fp_ou_mapping)
+    mappings = read_mappings(fp_ou_mapping, fp_traceurs)
 
     dhis2 = DHIS2(connection=dhis2_connection, cache_dir=Path(workspace.files_path, ".cache"))
 
@@ -299,13 +310,15 @@ def esigl_import_dhis2(
 
 
 @esigl_import_dhis2.task
-def read_mappings(fp_ou_mapping: File) -> dict[str, pl.DataFrame]:
+def read_mappings(fp_ou_mapping: File, fp_traceurs: File) -> dict[str, pl.DataFrame]:
     """Charge les tables de mapping (COC depuis la config versionnée, reste depuis le workspace).
 
     Parameters
     ----------
     fp_ou_mapping : File
-        XLSX (feuilles OrgUnit / Traceurs / R ou G).
+        XLSX (feuilles OrgUnit / R ou G).
+    fp_traceurs : File
+        Fichier dédié des produits traceurs (``annee, code_produit``), CSV ou XLSX.
 
     Returns
     -------
@@ -313,9 +326,11 @@ def read_mappings(fp_ou_mapping: File) -> dict[str, pl.DataFrame]:
         Clés ``coc``, ``ou``, ``traceurs``, ``product_type``.
     """
     ou_path = Path(workspace.files_path) / fp_ou_mapping.path
-    if not ou_path.exists():
-        current_run.log_error(f"Fichier introuvable : {ou_path.as_posix()}")
-        raise FileNotFoundError(ou_path.as_posix())
+    traceurs_path = Path(workspace.files_path) / fp_traceurs.path
+    for p in (ou_path, traceurs_path):
+        if not p.exists():
+            current_run.log_error(f"Fichier introuvable : {p.as_posix()}")
+            raise FileNotFoundError(p.as_posix())
 
     df_coc = _load_coc_mapping()
 
@@ -327,11 +342,7 @@ def read_mappings(fp_ou_mapping: File) -> dict[str, pl.DataFrame]:
         .unique()
     )
 
-    df_traceurs = (
-        pl.read_excel(ou_path, sheet_name=TRACEURS_SHEET, read_options={"header_row": 2})
-        .rename({"Nvo code": "code_produit", "ANNEE": "annee"})
-        .with_columns(pl.col("code_produit").cast(pl.String), pl.col("annee").cast(pl.Int64))
-    )
+    df_traceurs = _read_traceurs(traceurs_path)
 
     df_product_type = _read_product_type(ou_path)
 
@@ -340,6 +351,29 @@ def read_mappings(fp_ou_mapping: File) -> dict[str, pl.DataFrame]:
         f"{df_traceurs.height} traceurs, {df_product_type.height} classifications produit"
     )
     return {"coc": df_coc, "ou": df_ou, "traceurs": df_traceurs, "product_type": df_product_type}
+
+
+def _read_traceurs(path: Path) -> pl.DataFrame:
+    """Lit la liste des produits traceurs par année (fichier dédié, CSV ou XLSX).
+
+    En-tête attendu en ligne 1, avec au moins les colonnes ``annee`` et ``code_produit``
+    (les éventuelles colonnes ``Code`` / ``Désignation`` sont ignorées).
+
+    Parameters
+    ----------
+    path : Path
+        Chemin du fichier des produits traceurs.
+
+    Returns
+    -------
+    pl.DataFrame
+        Colonnes ``annee`` (int) et ``code_produit`` (str).
+    """
+    df = pl.read_csv(path) if path.suffix.lower() == ".csv" else pl.read_excel(path)
+    return df.select(
+        pl.col("annee").cast(pl.Int64),
+        pl.col("code_produit").cast(pl.String),
+    )
 
 
 def _read_product_type(ou_path: Path) -> pl.DataFrame:
