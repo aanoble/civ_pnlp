@@ -85,7 +85,8 @@ def aggregate_routine(df: pl.DataFrame, pub_start: datetime, pub_end: datetime) 
     """Agrège les produits de routine au grain ``(period, orgUnit, coc)``.
 
     Les CMM et quantités de commande proviennent directement d'eSIGL (contrairement au GTC).
-    ``nbrejrsdumois`` est pris tel quel (constante du mois) et non sommé.
+    ``nbrejrsdumois`` et ``nbrejrsrupture`` sont sommés sur les sites eSIGL regroupés sur une
+    même orgUnit (agrégation par produit), pour que la comparaison de rupture reste cohérente.
 
     Parameters
     ----------
@@ -186,7 +187,7 @@ def aggregate_gtc(df: pl.DataFrame, pub_start: datetime, pub_end: datetime) -> p
             *[pl.col(c).sum() for c in _SUM_METRICS],
             pl.col("stock_initial").first(),
             pl.col("sdu").last(),
-            pl.col("nbrejrsdumois").first(),
+            pl.col("nbrejrsdumois").sum(),
         )
         .join(df_cmm, on=["period", "orgUnit", "coc"], how="left")
         .pipe(_round_int)
