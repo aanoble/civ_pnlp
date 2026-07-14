@@ -5,7 +5,7 @@ on:
     branches:
       - main
     paths:
-      - ".github/workflows/push_esigl_import_dhis2.yaml"
+      - ".github/workflows/push_esigl_import_dhis2.yml"
       - "esigl_import_dhis2/**"
 
 jobs:

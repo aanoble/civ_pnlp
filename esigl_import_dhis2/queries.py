@@ -1,102 +1,83 @@
-QUERY_ETAT_STOCK = """
-SELECT DISTINCT
-    TO_CHAR(processing_periods.enddate, 'YYYYMM') AS period,
-    processing_periods.enddate AS enddate,
-    facilities.code AS code_site,
-    facilities.name AS site,
-    requisition_line_items.productcode as code_produit,
-    requisition_line_items.beginningbalance AS Stock_initial, --MxwO32EmLkm : SIGL-Quantité reçue au cours du  mois
-    requisition_line_items.quantityreceived AS Quantite_recue, -- VpsWXngJn8m : SIGL-Quantité disponible et utilisable en début mois
-    requisition_line_items.quantitydispensed AS Quantite_distribuee, -- r4Y2vAZNFJr : SIGL-Quantité consommée au cours du  mois
-    requisition_line_items.totallossesandadjustments AS Perte_ajustement, -- DaYWwwQWpzO : SIGL-Pertes et ajustements au cours du  mois
-    requisition_line_items.stockinhand AS SDU, -- MsVzBFeQy98 : SIGL-Stock Disponible et Utilisatble
-    requisition_line_items.amc AS cmm, -- tAviNwTJA69 : SIGL-Consommation Moyenne Mensuel
-    requisition_line_items.stockoutdays AS NbreJrsRupture, -- lmIvSiYc80L : SIGL-Nbre de jours de rupture de stock au cours du  mois
-    requisition_line_items.calculatedorderquantity AS Quantite_proposee, -- cpDZa6GSME2 : SIGL-Quantité suggérée
-    requisition_line_items.quantityrequested AS Quantite_commandee, -- qz4cXueOt5p : SIGL-Quantité commander
-    requisition_line_items.quantityapproved AS Quantite_approuvee -- TnEwztOelac : SIGL-Quantité approuvée
-FROM requisition_line_items
-JOIN requisitions ON requisition_line_items.rnrid = requisitions.id
-JOIN products ON requisition_line_items.productcode::text = products.code::text
-JOIN programs ON requisitions.programid = programs.id
-JOIN program_products ON products.id = program_products.productid AND program_products.programid = programs.id
-JOIN processing_periods ON requisitions.periodid = processing_periods.id
-JOIN product_categories ON program_products.productcategoryid = product_categories.id
-JOIN processing_schedules ON processing_periods.scheduleid = processing_schedules.id
-JOIN facilities ON requisitions.facilityid = facilities.id
-JOIN facility_operators ON facilities.operatedbyid = facility_operators.id
-JOIN facility_types ON facilities.typeid = facility_types.id
-JOIN vw_districts  ON facilities.geographiczoneid = vw_districts.district_id
-JOIN geographic_zones ON facilities.geographiczoneid = geographic_zones.id
-LEFT JOIN product_forms ON products.formid = product_forms.id
-LEFT JOIN dosage_units ON products.dosageunitid = dosage_units.id
-WHERE
-    {processing_periods}
-    AND programs.id IN (19, 23)
-    AND requisitions.status NOT IN ('INITIATED', 'SUBMITTED')
-    AND requisitions.emergency = false
-"""  # noqa: E501
+"""Requêtes SQL Metabase (base eSIGL) du pipeline d'import Gestion de Stock.
 
-# doit être ajouté s'il existe AND facilities.code IN {facilities_code}
-
-QUERY_ETAT_STOCK_OLD = """
-SELECT
-    programs.name AS Programme,
-    processing_periods.startdate AS startdate,
-    geographic_zones.name AS District,
-    requisition_line_items.productcode AS Code_produit,
-    SUM(requisition_line_items.beginningbalance) AS Stock_initial, --MxwO32EmLkm : SIGL-Quantité reçue au cours du  mois
-    SUM(requisition_line_items.quantityreceived) AS Quantite_recue, -- VpsWXngJn8m : SIGL-Quantité disponible et utilisable en début mois
-    SUM(requisition_line_items.quantitydispensed) AS Quantite_distribuee, -- r4Y2vAZNFJr : SIGL-Quantité consommée au cours du  mois
-    SUM(requisition_line_items.totallossesandadjustments) AS Perte_ajustement, -- DaYWwwQWpzO : SIGL-Pertes et ajustements au cours du  mois
-    SUM(requisition_line_items.stockinhand) AS SDU, -- MsVzBFeQy98 : SIGL-Stock Disponible et Utilisatble
-    SUM(requisition_line_items.amc) AS cmm, -- tAviNwTJA69 : SIGL-Consommation Moyenne Mensuel
-    SUM(requisition_line_items.stockoutdays) AS NbreJrsRupture, -- lmIvSiYc80L : SIGL-Nbre de jours de rupture de stock au cours du  mois
-    SUM(requisition_line_items.calculatedorderquantity) AS Quantite_proposee, -- cpDZa6GSME2 : SIGL-Quantité suggérée
-    SUM(requisition_line_items.quantityrequested) AS Quantite_commandee, -- qz4cXueOt5p : SIGL-Quantité commander
-    SUM(requisition_line_items.quantityapproved) AS Quantite_approuvee -- TnEwztOelac : SIGL-Quantité approuvée
-FROM requisition_line_items
-JOIN requisitions
-    ON requisition_line_items.rnrid = requisitions.id
-    AND requisitions.status NOT IN ('INITIATED', 'SUBMITTED')
-    AND requisitions.emergency = FALSE
-    AND requisitions.programid = '23'
-JOIN processing_periods
-    ON requisitions.periodid = processing_periods.id
-    AND {processing_periods}
-JOIN programs
-    ON requisitions.programid = programs.id
-JOIN products
-    ON requisition_line_items.productcode = products.code
-    AND requisition_line_items.productcode IN {products_code}
-JOIN facilities
-    ON requisitions.facilityid = facilities.id
-JOIN geographic_zones
-    ON facilities.geographiczoneid = geographic_zones.id
-WHERE
-    requisition_line_items.skipped = FALSE
-    AND requisition_line_items.fullsupply = TRUE
-GROUP BY
-    programs.name,
-    processing_periods.startdate,
-    geographic_zones.name,
-    requisition_line_items.productcode
-ORDER BY
-    processing_periods.startdate DESC
-"""  # noqa: E501
-
-QUERY_DISTRICT = """
-SELECT DISTINCT
-    vw_districts.region_name AS region,
-    geographic_zones.name AS district,
-    geographic_zones.id AS id_district,
-    facilities.code AS code_etablissement,
-    facilities.name AS etablissement
-FROM vw_districts
-    JOIN facilities ON vw_districts.district_id  = facilities.geographiczoneid
-    JOIN geographic_zones ON facilities.geographiczoneid = geographic_zones.id
-ORDER BY region
+Chaque requête expose des emplacements `{...}` formatés côté pipeline :
+- ``{processing_periods}`` : clause de bornage temporel (sur ``pp.enddate``).
+- ``{products_code}`` : clause de filtrage des produits (``rli.productcode IN (...)``).
 """
 
-# processing_periods.startdate >= DATE_TRUNC('month', CURRENT_DATE)
-#  - INTERVAL '{lookback_months} months'
+# Extraction unifiée des états de stock (routine + GTC), grain ligne de réquisition.
+# Le split routine/GTC est effectué en aval (classification produit), la requête est
+# volontairement identique aux deux flux pour limiter la charge Metabase.
+QUERY_ETAT_STOCK = """
+SELECT
+    TO_CHAR(pp.enddate, 'YYYYMM') AS period,
+    pp.enddate AS enddate,
+    f.code AS code_site,
+    rli.productcode AS code_produit,
+    rli.beginningbalance AS stock_initial,
+    rli.quantityreceived AS quantite_recue,
+    rli.quantitydispensed AS quantite_distribuee,
+    rli.stockoutdays AS nbrejrsrupture,
+    rli.totallossesandadjustments AS perte_ajustement,
+    rli.calculatedorderquantity AS quantite_proposee,
+    rli.quantityrequested AS quantite_commandee,
+    rli.quantityapproved AS quantite_approuvee,
+    rli.amc AS cmm,
+    rli.stockinhand AS sdu
+FROM requisition_line_items rli
+INNER JOIN requisitions r ON rli.rnrid = r.id
+INNER JOIN processing_periods pp ON r.periodid = pp.id
+INNER JOIN facilities f ON r.facilityid = f.id
+INNER JOIN programs p ON r.programid = p.id
+INNER JOIN products pr ON rli.productcode = pr.code
+INNER JOIN program_products ppd ON (pr.id = ppd.productid AND ppd.programid = p.id)
+INNER JOIN geographic_zones gz ON f.geographiczoneid = gz.id
+WHERE rli.skipped = FALSE
+    AND {processing_periods}
+    AND {products_code}
+    AND {facilities}
+    AND p.id IN (19, 23)
+    AND r.status NOT IN ('INITIATED', 'SUBMITTED')
+    AND r.emergency = FALSE
+    AND rli.fullsupply = TRUE
+ORDER BY enddate, code_site, code_produit
+"""
+
+# Promptitude des rapports : date de soumission vs date-limite par structure.
+# On récupère la première soumission (SUBMITTED) et la première autorisation (AUTHORIZED)
+# par réquisition, avec le type de structure servant à déterminer le délai autorisé.
+QUERY_PROMPTITUDE = """
+WITH submission_dates AS (
+    SELECT
+        rnrid,
+        MIN(createddate) FILTER (WHERE status = 'SUBMITTED')::date AS date_soumission,
+        MIN(createddate) FILTER (WHERE status = 'AUTHORIZED')::date AS date_autorisation
+    FROM requisition_status_changes
+    WHERE status IN ('SUBMITTED', 'AUTHORIZED')
+    GROUP BY rnrid
+)
+SELECT
+    TO_CHAR(pp.enddate, 'YYYYMM') AS period,
+    pp.enddate AS enddate,
+    f.code AS code_site,
+    fo.text AS type_structure,
+    sd.date_soumission,
+    sd.date_autorisation
+FROM requisitions r
+JOIN facilities f ON f.id = r.facilityid
+JOIN facility_operators fo ON f.operatedbyid = fo.id
+JOIN vw_districts vd ON f.geographiczoneid = vd.district_id
+JOIN geographic_zones gz ON gz.id = f.geographiczoneid
+JOIN processing_periods pp ON pp.id = r.periodid
+JOIN programs pr ON pr.id = r.programid
+LEFT JOIN submission_dates sd ON r.id = sd.rnrid
+WHERE pr.id = {promptitude_program_id}
+    AND {processing_periods}
+    AND {facilities}
+    AND r.emergency = FALSE
+    AND r.status IN ('AUTHORIZED', 'APPROVED', 'RELEASED')
+ORDER BY period ASC
+"""
+
+# Liste des codes de site (pour la validation des paramètres facilities_code).
+QUERY_FACILITIES = "SELECT code FROM facilities"

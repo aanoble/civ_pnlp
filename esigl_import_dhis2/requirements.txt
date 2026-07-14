@@ -1,2 +1,4 @@
 openhexa.toolbox >= 2.6.5
+polars >= 1.26.0
+python-dateutil
 fastexcel
