@@ -44,7 +44,8 @@ extract_promptitude ──────────────┴─► build_pa
 |---|---|---|
 | `dhis2_connection` | `dedop-nouvelle-instance` | Instance DHIS2 cible (définitive) |
 | `metabase_connection` | `metabase-esigl` | Source eSIGL |
-| `fp_ou_mapping` | `.../Fichier mapping OrgUnit eSIGL DHIS2.xlsx` | Feuilles `OrgUnit`, `Traceurs`, `R ou G` |
+| `fp_ou_mapping` | `.../Fichier mapping OrgUnit eSIGL DHIS2.xlsx` | Feuilles `OrgUnit`, `R ou G` |
+| `fp_traceurs` | `.../produits_traceurs/produits_traceurs.xlsx` | Produits traceurs par année (`annee, code_produit`) |
 | `fp_site_attendus` | `.../site_attendus/sites_attendus.csv` | Sites attendus consolidés (promptitude) |
 | `dataset_id` | `KyO2eSxVW4q` | Dataset Gestion de Stock (sélecteur DHIS2) |
 | `dhis2_aoc` | *(vide)* | AOC (et COC promptitude). **Facultatif** : si vide, l'AOC par défaut de l'instance (`default`) est résolu automatiquement |
@@ -88,8 +89,10 @@ Sous `metabase eSIGL/data/ressources/` :
 
 - **`Fichier mapping OrgUnit eSIGL DHIS2.xlsx`** — feuilles :
   - `OrgUnit` : `New_Code` (code site) → `ID_Dhis2` (orgUnit).
-  - `Traceurs` (en-tête ligne 3) : `ANNEE`, `Nvo code` (code produit).
   - `R ou G` : `code_produit`, `Type produit` (`ROUTINE`/`GTC`). Repli sur liste en dur si absente.
+- **`produits_traceurs/produits_traceurs.xlsx`** — fichier **dédié** des produits traceurs par
+  année (colonnes `annee`/`ANNEE` et `code_produit`/`Nvo code`), CSV ou XLSX. Sorti du classeur
+  de mapping pour être maintenu indépendamment.
 - **`site_attendus/sites_attendus.csv`** — fichier **consolidé** `annee,code_site,rapport_attendu`.
   À maintenir en concaténant les fichiers annuels PNLP (les formats Excel annuels diffèrent ;
   la normalisation est faite une fois pour toutes hors pipeline).
