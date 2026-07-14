@@ -33,7 +33,8 @@ extract_promptitude ──────────────┴─► build_pa
 - **compute_derived** : agrège routine (CMM eSIGL) et GTC (CMM en moyenne glissante 3 mois),
   puis calcule tous les indicateurs dérivés (traceur, ruptures, `cmm_gestionnaire`, `bien_stocke`).
 - **push_data_to_dhis2** : chunks + retry/backoff (429/5xx), agrège `importCount`/`conflicts`,
-  et **échoue** si `ignored/total > max_ignored_ratio`.
+  et **échoue** si `conflits/total > max_conflict_ratio` (les conflits — et non le brut
+  `ignored`, qui inclut les valeurs inchangées — signalent une métadonnée cible manquante).
 - **align_stale_values** (opt-in) : DELETE ciblé des flags dérivés obsolètes (correction d'un
   passage 1→0, impossible via un simple upsert car DHIS2 ignore les zéros non significatifs).
 
@@ -52,7 +53,7 @@ extract_promptitude ──────────────┴─► build_pa
 | `enable_promptitude` | `True` | Branche promptitude |
 | `enable_bien_stocke` | `False` | Indicateur `bien_stocke` (règle **provisoire**) |
 | `delete_stale_values` | `False` | Alignement des suppressions (DELETE) |
-| `max_ignored_ratio` | `0.05` | Seuil d'échec sur les `ignored` |
+| `max_conflict_ratio` | `0.05` | Seuil d'échec sur le ratio de **conflits** (métadonnée cible manquante) |
 | `import_mode` | `CREATE_AND_UPDATE` | Stratégie d'import |
 | `dry_run` | `False` | Simulation |
 

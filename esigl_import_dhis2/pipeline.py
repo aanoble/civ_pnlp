@@ -147,10 +147,10 @@ OU_GROUP_UID = "nJ1jXZxufek"
     required=False,
 )
 @parameter(
-    "max_ignored_ratio",
+    "max_conflict_ratio",
     type=float,  # type: ignore
-    name="Seuil d'échec ignored",
-    help="Ratio ignored/total au-delà duquel le run échoue (0-1)",
+    name="Seuil d'échec conflits",
+    help="Ratio conflits/total au-delà duquel le run échoue (0-1) ; conflit = métadonnée manquante",
     default=0.05,
     required=True,
 )
@@ -194,7 +194,7 @@ def esigl_import_dhis2(
     enable_promptitude: bool = True,
     enable_bien_stocke: bool = False,
     delete_stale_values: bool = False,
-    max_ignored_ratio: float = 0.05,
+    max_conflict_ratio: float = 0.05,
     import_mode: str = "CREATE_AND_UPDATE",
     dry_run: bool = False,
     post_batch_size: int = 5000,
@@ -229,8 +229,8 @@ def esigl_import_dhis2(
         Active le calcul de ``bien_stocke``.
     delete_stale_values : bool
         Aligne les suppressions (DELETE ciblé des flags obsolètes).
-    max_ignored_ratio : float
-        Seuil d'échec sur le ratio ``ignored/total``.
+    max_conflict_ratio : float
+        Seuil d'échec sur le ratio ``conflits/total`` (métadonnées cibles manquantes).
     import_mode : str
         Stratégie d'import DHIS2.
     dry_run : bool
@@ -278,7 +278,7 @@ def esigl_import_dhis2(
     payload = build_payload(df_products, df_prompt, aoc)
 
     summary = push_data_to_dhis2(
-        dhis2, payload, dataset_id, dry_run, import_mode, post_batch_size, max_ignored_ratio
+        dhis2, payload, dataset_id, dry_run, import_mode, post_batch_size, max_conflict_ratio
     )
 
     align = align_stale_values(
@@ -982,9 +982,9 @@ def push_data_to_dhis2(
     dry_run: bool,
     import_mode: str,
     post_batch_size: int,
-    max_ignored_ratio: float,
+    max_conflict_ratio: float,
 ) -> dict:
-    """Pousse le payload vers ``dataValueSets`` (chunks + retry/backoff + seuil ignored).
+    """Pousse le payload vers ``dataValueSets`` (chunks + retry/backoff + seuil de conflits).
 
     Parameters
     ----------
@@ -1000,8 +1000,9 @@ def push_data_to_dhis2(
         Stratégie d'import.
     post_batch_size : int
         Taille des lots.
-    max_ignored_ratio : float
-        Seuil d'échec sur ``ignored/total``.
+    max_conflict_ratio : float
+        Seuil d'échec sur ``conflits/total`` (les conflits signalent une métadonnée manquante ;
+        le brut ``ignored`` inclut les valeurs inchangées et n'est pas un critère fiable).
 
     Returns
     -------
@@ -1011,7 +1012,7 @@ def push_data_to_dhis2(
     Raises
     ------
     ValueError
-        Si le ratio d'``ignored`` dépasse ``max_ignored_ratio``.
+        Si le ratio de conflits dépasse ``max_conflict_ratio``.
     """
     total = len(payload)
     if total == 0:
@@ -1089,19 +1090,27 @@ def push_data_to_dhis2(
     totals = aggregated["totals"]
     success = totals["imported"] + totals["updated"]
     aggregated["imported"] = success
+
+    # Les conflits (et non le brut `ignored`) signalent une métadonnée cible manquante :
+    # en CREATE_AND_UPDATE, les valeurs inchangées d'un run à l'autre sont comptées `ignored`
+    # sans conflit, ce qui rendrait un seuil sur `ignored` ininterprétable en régime permanent.
+    total_conflicts = sum(len(c.get("issues", [])) for c in aggregated["chunks"])
+    conflict_ratio = total_conflicts / total if total else 0.0
+    aggregated["ignored_ratio"] = totals["ignored"] / total if total else 0.0
+    aggregated["conflicts"] = total_conflicts
+    aggregated["conflict_ratio"] = conflict_ratio
+
     current_run.log_info(
         f"Importé {success}/{total} dataValues (ignored={totals['ignored']}, "
-        f"deleted={totals['deleted']}, strategy={import_mode})."
+        f"deleted={totals['deleted']}, conflits={total_conflicts}, strategy={import_mode})."
     )
 
-    ignored_ratio = totals["ignored"] / total if total else 0.0
-    aggregated["ignored_ratio"] = ignored_ratio
-    if not dry_run and ignored_ratio > max_ignored_ratio:
+    if not dry_run and conflict_ratio > max_conflict_ratio:
         current_run.log_critical(
-            f"Ratio ignored={ignored_ratio:.1%} > seuil {max_ignored_ratio:.1%} : "
-            "métadonnées cibles probablement manquantes."
+            f"Ratio de conflits={conflict_ratio:.1%} > seuil {max_conflict_ratio:.1%} : "
+            "métadonnées cibles probablement manquantes (COC/AOC/OU)."
         )
-        raise ValueError(f"Trop de valeurs ignorées ({ignored_ratio:.1%})")
+        raise ValueError(f"Trop de conflits à l'import ({conflict_ratio:.1%})")
     return aggregated
 
 
