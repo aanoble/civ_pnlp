@@ -12,6 +12,7 @@ QUERY_ETAT_STOCK = """
 SELECT
     TO_CHAR(pp.enddate, 'YYYYMM') AS period,
     pp.enddate AS enddate,
+    pp.startdate AS startdate,
     f.code AS code_site,
     rli.productcode AS code_produit,
     rli.beginningbalance AS stock_initial,

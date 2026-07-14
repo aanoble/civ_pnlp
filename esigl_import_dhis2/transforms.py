@@ -76,6 +76,29 @@ def add_nbrejrsdumois(df: pl.DataFrame) -> pl.DataFrame:
     )
 
 
+def add_report_duration(df: pl.DataFrame) -> pl.DataFrame:
+    """Ajoute la durée couverte par le rapport, en jours (``enddate - startdate + 1``).
+
+    Utilisé pour les produits GTC, rapportés en hebdomadaire : le dénominateur de la rupture
+    n'est pas le nombre de jours du mois calendaire mais la durée réellement couverte par le
+    rapport. La somme de ces durées sur les rapports d'un mois donne le total de jours couverts.
+
+    Parameters
+    ----------
+    df : pl.DataFrame
+        Doit contenir ``enddate`` et ``startdate``.
+
+    Returns
+    -------
+    pl.DataFrame
+        ``df`` enrichi de ``nbrejrsdumois`` (durée du rapport en jours).
+    """
+    duree = (
+        pl.col("enddate").cast(pl.Datetime) - pl.col("startdate").cast(pl.Datetime)
+    ).dt.total_days() + 1
+    return df.with_columns(duree.alias("nbrejrsdumois"))
+
+
 def _round_int(df: pl.DataFrame) -> pl.DataFrame:
     """Arrondit toutes les colonnes numériques et les convertit en entiers 64 bits."""  # noqa: DOC201
     return df.with_columns(cs.numeric().round(0).cast(pl.Int64))
@@ -163,11 +186,13 @@ def aggregate_gtc(df: pl.DataFrame, pub_start: datetime, pub_end: datetime) -> p
 
     ``stock_initial`` = premier de la période, ``sdu`` = dernier, CMM recalculée en moyenne
     glissante sur l'historique complet. Les quantités de commande sont nulles (non suivies GTC).
+    Rapportage **hebdomadaire** : ``nbrejrsdumois`` = somme des durées des rapports du mois
+    (``enddate - startdate + 1``), et non le nombre de jours du mois calendaire.
 
     Parameters
     ----------
     df : pl.DataFrame
-        Lignes GTC enrichies, toutes périodes extraites (fenêtre étendue pour la CMM).
+        Lignes GTC enrichies (``startdate`` inclus), toutes périodes extraites (fenêtre CMM).
     pub_start, pub_end : datetime
         Bornes (incluses) de la fenêtre de publication.
 
@@ -176,11 +201,11 @@ def aggregate_gtc(df: pl.DataFrame, pub_start: datetime, pub_end: datetime) -> p
     pl.DataFrame
         Agrégat GTC avec ``produit_gere = 1`` et quantités de commande à ``null``.
     """
-    df = df.with_columns(pl.col("enddate").cast(pl.Datetime))
+    df = df.with_columns(pl.col("enddate").cast(pl.Datetime), pl.col("startdate").cast(pl.Datetime))
     df_cmm = compute_cmm_glissante(df)
 
     return (
-        add_nbrejrsdumois(df)
+        add_report_duration(df)
         .filter((pl.col("enddate") >= pub_start) & (pl.col("enddate") <= pub_end))
         .group_by(["period", "orgUnit", "coc"])
         .agg(

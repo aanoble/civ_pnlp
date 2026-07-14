@@ -79,7 +79,8 @@ def test_compute_cmm_glissante_rolling_mean() -> None:
 def _gtc_row(**kw: object) -> dict:
     base = {
         "period": "202501",
-        "enddate": datetime(2025, 1, 31),
+        "enddate": datetime(2025, 1, 7),
+        "startdate": datetime(2025, 1, 1),
         "orgUnit": "OU1",
         "coc": "C1",
         "stock_initial": 100,
@@ -101,6 +102,18 @@ def test_aggregate_gtc_nulls_order_quantities() -> None:
     assert row["quantite_commandee"] is None
     assert row["produit_gere"] == 1
     assert row["cmm"] == 4  # une seule période
+
+
+def test_aggregate_gtc_report_duration() -> None:
+    """Nbrejrsdumois GTC = somme des durées des rapports hebdo (enddate-startdate+1)."""
+    df = pl.DataFrame(
+        [
+            _gtc_row(enddate=datetime(2025, 1, 7), startdate=datetime(2025, 1, 1)),  # 7 j
+            _gtc_row(enddate=datetime(2025, 1, 14), startdate=datetime(2025, 1, 8)),  # 7 j
+        ]
+    )
+    out = T.aggregate_gtc(df, datetime(2025, 1, 1), datetime(2025, 1, 31, 23, 59))
+    assert out.row(0, named=True)["nbrejrsdumois"] == 14  # 7 + 7, pas les jours du mois
 
 
 def test_traceur_flags() -> None:
