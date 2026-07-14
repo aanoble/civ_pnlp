@@ -16,6 +16,7 @@ dependencies = [
 exclude = [
     "other files/",
     "superset_dashboard/",
+    "**/refonte-pipelines/",
 ]
 line-length = 100
 
@@ -103,4 +104,5 @@ reportOptionalMemberAccess = false
 exclude = [
     "other files/",
     "superset_dashboard/", "**/node_modules", "**/__pycache__", "**/.*", ".venv",
+    "**/refonte-pipelines/",
 ]

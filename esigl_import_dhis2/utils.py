@@ -1,39 +1,29 @@
+"""Helpers du pipeline d'import eSIGL → DHIS2 (dates, périodes, santé Metabase)."""
+
 from datetime import datetime
 
+from dateutil.relativedelta import relativedelta
 from metabase import Metabase
 from openhexa.sdk import current_run
 
-FRENCH_MONTHS = [
-    "",
-    "JANVIER",
-    "FEVRIER",
-    "MARS",
-    "AVRIL",
-    "MAI",
-    "JUIN",
-    "JUILLET",
-    "AOUT",
-    "SEPTEMBRE",
-    "OCTOBRE",
-    "NOVEMBRE",
-    "DECEMBRE",
-]
-
-QUARTER_MONTHS = {3, 6, 9, 12}
-
 
 def parse_cutoff_date(date_str: str) -> datetime:
-    """
-    Valide et convertit une date ISO en objet datetime.
+    """Valide et convertit une date ISO en objet datetime.
 
-    Args:
-        date_str: Chaîne de date au format YYYY-MM-DD
+    Parameters
+    ----------
+    date_str : str
+        Chaîne de date au format ``YYYY-MM-DD``.
 
-    Returns:
-        Objet datetime correspondant
+    Returns
+    -------
+    datetime
+        Objet datetime correspondant.
 
-    Raises:
-        ValueError: Format de date invalide
+    Raises
+    ------
+    ValueError
+        Si le format de date est invalide.
     """
     try:
         return datetime.strptime(date_str, "%Y-%m-%d")
@@ -42,40 +32,62 @@ def parse_cutoff_date(date_str: str) -> datetime:
         raise ValueError(f"Format de date invalide: '{date_str}'. Requis: YYYY-MM-DD") from e
 
 
-def get_date_report(date_report: datetime) -> list:
+def compute_extraction_window(
+    start_date: str | None,
+    end_date: str | None,
+    months_back: int,
+    cmm_lookback: int = 3,
+) -> tuple[datetime, datetime, datetime]:
+    """Calcule les bornes d'extraction et de publication à partir des paramètres.
+
+    - Fenêtre de **publication** ``[pub_start, end]`` : périodes réellement poussées vers DHIS2.
+    - Fenêtre d'**extraction** ``[cmm_start, end]`` : élargie de ``cmm_lookback`` mois en amont
+      pour que la moyenne glissante (CMM GTC) du premier mois publié soit correcte.
+
+    Parameters
+    ----------
+    start_date : str | None
+        Date de début (``YYYY-MM-DD``). Par défaut : 1er jour du mois courant.
+    end_date : str | None
+        Date de fin (``YYYY-MM-DD``). Par défaut : fin du mois de ``start_date``.
+    months_back : int
+        Nombre de mois d'historique à republier avant ``start_date``.
+    cmm_lookback : int, optional
+        Mois supplémentaires extraits pour le calcul de la CMM (défaut 3).
+
+    Returns
+    -------
+    tuple[datetime, datetime, datetime]
+        ``(cmm_start, pub_start, end)``, toutes normalisées (début/fin de mois).
     """
-    Transforme une date en format de rapport français avec logique trimestrielle.
+    start_dt = parse_cutoff_date(start_date) if start_date else datetime.now()
+    start_dt = start_dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-    Args:
-        date_report: Objet datetime représentant la date du rapport.
+    end_dt = parse_cutoff_date(end_date) if end_date else start_dt
+    end_dt = (end_dt + relativedelta(day=31)).replace(hour=23, minute=59, second=59)
 
-    Returns:
-        Liste de chaînes représentant la/les périodes de rapport en français :
-        - Si la date est en fin de trimestre (mois 3, 6, 9, 12) retourne
-          [<mois précédent> <mois courant année>, <mois courant année>].
-        - Sinon retourne ["('<mois courant année')"].
-    """
-    month, year = date_report.month, date_report.year
-    current_period = f"{FRENCH_MONTHS[month]} {year}"
-
-    if month in QUARTER_MONTHS:
-        prev_month = (month - 2) % 12 or 12  # Gestion du cycle annuel
-        return [f"{FRENCH_MONTHS[prev_month]} {current_period}", current_period]
-    return [f"{current_period}"]
+    pub_start = start_dt - relativedelta(months=months_back) if months_back else start_dt
+    cmm_start = pub_start - relativedelta(months=cmm_lookback)
+    return cmm_start, pub_start, end_dt
 
 
 def check_metabase_server_health(metabase: Metabase) -> bool:
-    """
-    Check if the DHIS2 server is responding.
+    """Vérifie que le serveur Metabase répond.
 
     Parameters
     ----------
     metabase : Metabase
-        The Metabase instance to check.
+        Instance Metabase à interroger.
 
     Returns
     -------
-        bool: True if the server is responding, raises ConnectionError otherwise.
+    bool
+        ``True`` si le serveur répond.
+
+    Raises
+    ------
+    ConnectionError
+        Si le serveur est injoignable.
     """
     try:
         metabase.api.ping()  # type: ignore

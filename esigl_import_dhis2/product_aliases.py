@@ -1,0 +1,56 @@
+"""Alias de codes produits eSIGL : ancien code (< 2020) → code produit actuel.
+
+Avant 2020, certains produits utilisaient une codification différente. eSIGL renvoie donc
+l'ancien code pour les périodes antérieures. On étend le filtre produit à ces anciens codes
+et on les normalise vers le code actuel avant la jointure sur ``COC_MAPPING``.
+Source : feuille ``DataElementOldCode`` du classeur de mapping (restreint aux produits gérés).
+"""
+
+PRODUCT_CODE_ALIASES: dict[str, str] = {
+    "AM01033": "3050040",
+    "AM02015": "3050013",
+    "AM02028": "3050016",
+    "AM02172": "3050071",
+    "AM02251": "3050064",
+    "AM02252": "3050061",
+    "AM02253": "3050063",
+    "AM02254": "3050062",
+    "AM02270": "3050340",
+    "AM02272": "3050200",
+    "AM02274": "3050342",
+    "AM02275": "3050198",
+    "AM02277": "3050343",
+    "AM18181": "3230032",
+    "AY01033": "3050040",
+    "AY02015": "3050013",
+    "AY02020": "3050012",
+    "AY02027": "3050015",
+    "AY02028": "3050016",
+    "AY02140": "4030224",
+    "AY02172": "3050071",
+    "AY02177": "3050070",
+    "AY02251": "3050064",
+    "AY02252": "3050061",
+    "AY02253": "3050063",
+    "AY02254": "3050062",
+    "AY02270": "3050340",
+    "AY02271": "3050339",
+    "AY02272": "3050200",
+    "AY02274": "3050342",
+    "AY02275": "3050198",
+    "AY02277": "3050343",
+    "AY13071": "3010049",
+    "AY13115": "3010062",
+    "AY18181": "3230032",
+    "AY23020": "3080129",
+    "AY23060": "4030456",
+    "AY23230": "4150558",
+    "AY23236": "4150557",
+    "AY23237": "4150555",
+    "AY23238": "4150554",
+    "AY23239": "4150556",
+    "AY24230": "4030462",
+    "AY24355": "4030209",
+    "AY42050": "4030247",
+    "AY42140": "4030177",
+}
