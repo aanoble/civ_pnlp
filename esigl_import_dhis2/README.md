@@ -49,7 +49,7 @@ extract_promptitude ──────────────┴─► build_pa
 | `fp_site_attendus` | `.../site_attendus/sites_attendus.csv` | Sites attendus consolidés (promptitude) |
 | `dataset_id` | `KyO2eSxVW4q` | Dataset Gestion de Stock (sélecteur DHIS2) |
 | `dhis2_aoc` | *(vide)* | AOC (et COC promptitude). **Facultatif** : si vide, l'AOC par défaut de l'instance (`default`) est résolu automatiquement |
-| `start_date` / `end_date` | (mois courant) | Fenêtre d'extraction |
+| `start_date` / `end_date` | (dernière période close) | Fenêtre d'extraction (voir plafond ci-dessous) |
 | `months_back` | `3` | Historique republié avant `start_date` |
 | `enable_promptitude` | `True` | Branche promptitude |
 | `enable_bien_stocke` | `False` | Indicateur `bien_stocke` (règle **provisoire**) |
@@ -57,6 +57,11 @@ extract_promptitude ──────────────┴─► build_pa
 | `max_conflict_ratio` | `0.05` | Seuil d'échec sur le ratio de **conflits** (métadonnée cible manquante) |
 | `import_mode` | `CREATE_AND_UPDATE` | Stratégie d'import |
 | `dry_run` | `False` | Simulation |
+
+> **Plafond des périodes** : le dataSet n'ouvre pas les périodes futures ni le mois courant
+> (incomplet) à la saisie. La fenêtre est donc **plafonnée à la dernière période close** (fin
+> du mois précédent) : la valeur par défaut vise ce mois, et une `end_date` explicite au-delà
+> est ramenée à ce plafond (évite des rejets DHIS2 sur des périodes fermées).
 
 ## Mapping produit → COC (module versionné)
 

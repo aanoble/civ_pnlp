@@ -37,6 +37,7 @@ def compute_extraction_window(
     end_date: str | None,
     months_back: int,
     cmm_lookback: int = 3,
+    now: datetime | None = None,
 ) -> tuple[datetime, datetime, datetime]:
     """Calcule les bornes d'extraction et de publication à partir des paramètres.
 
@@ -44,27 +45,47 @@ def compute_extraction_window(
     - Fenêtre d'**extraction** ``[cmm_start, end]`` : élargie de ``cmm_lookback`` mois en amont
       pour que la moyenne glissante (CMM GTC) du premier mois publié soit correcte.
 
+    Le dataSet cible n'ouvre pas les périodes futures ni le mois courant (incomplet) à la
+    saisie : la fin de fenêtre est donc **plafonnée à la dernière période close** (fin du mois
+    précédent). Une ``end_date`` explicite au-delà de ce plafond est ramenée à ce plafond.
+
     Parameters
     ----------
     start_date : str | None
-        Date de début (``YYYY-MM-DD``). Par défaut : 1er jour du mois courant.
+        Date de début (``YYYY-MM-DD``). Par défaut : 1er jour de la dernière période close.
     end_date : str | None
-        Date de fin (``YYYY-MM-DD``). Par défaut : fin du mois de ``start_date``.
+        Date de fin (``YYYY-MM-DD``). Par défaut : fin de la dernière période close.
     months_back : int
         Nombre de mois d'historique à republier avant ``start_date``.
     cmm_lookback : int, optional
         Mois supplémentaires extraits pour le calcul de la CMM (défaut 3).
+    now : datetime | None, optional
+        Date de référence (défaut : maintenant) ; injectable pour les tests.
 
     Returns
     -------
     tuple[datetime, datetime, datetime]
         ``(cmm_start, pub_start, end)``, toutes normalisées (début/fin de mois).
     """
-    start_dt = parse_cutoff_date(start_date) if start_date else datetime.now()
-    start_dt = start_dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    now = now or datetime.now()
+    # Dernière période ouverte à la saisie = fin du mois précédent (mois courant/futurs fermés).
+    last_open_end = (now.replace(day=1) - relativedelta(days=1)).replace(
+        hour=23, minute=59, second=59, microsecond=0
+    )
 
-    end_dt = parse_cutoff_date(end_date) if end_date else start_dt
-    end_dt = (end_dt + relativedelta(day=31)).replace(hour=23, minute=59, second=59)
+    if end_date:
+        end_dt = (parse_cutoff_date(end_date) + relativedelta(day=31)).replace(
+            hour=23, minute=59, second=59
+        )
+    else:
+        end_dt = last_open_end
+    end_dt = min(end_dt, last_open_end)
+
+    if start_date:
+        start_dt = parse_cutoff_date(start_date)
+    else:
+        start_dt = end_dt
+    start_dt = start_dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
     pub_start = start_dt - relativedelta(months=months_back) if months_back else start_dt
     cmm_start = pub_start - relativedelta(months=cmm_lookback)
