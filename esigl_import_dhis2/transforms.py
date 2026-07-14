@@ -112,7 +112,7 @@ def aggregate_routine(df: pl.DataFrame, pub_start: datetime, pub_end: datetime) 
             pl.col("cmm").sum(),
             pl.col("stock_initial").sum(),
             pl.col("sdu").sum(),
-            pl.col("nbrejrsdumois").first(),
+            pl.col("nbrejrsdumois").sum(),
         )
         .pipe(_round_int)
         .with_columns(pl.lit(1).cast(pl.Int64).alias("produit_gere"))

@@ -88,14 +88,16 @@ OU_GROUP_UID = "nJ1jXZxufek"
     help="XLSX contenant les feuilles OrgUnit / Traceurs / R ou G",
     default="metabase eSIGL/data/ressources/Fichier mapping OrgUnit eSIGL DHIS2.xlsx",
     required=True,
+    directory="metabase eSIGL/data/ressources/mapping_orgunit_esigl_dhis2/",
 )
 @parameter(
     "fp_site_attendus",
     type=File,
     name="Sites attendus consolidés",
     help="Fichier `annee,code_site,rapport_attendu` (CSV/XLSX) pour la promptitude",
-    default="metabase eSIGL/data/ressources/site_attendus/sites_attendus.csv",
+    default="metabase eSIGL/data/ressources/site_attendus/SITES ATTENDUS 2026.xlsx",
     required=False,
+    directory="metabase eSIGL/data/ressources/site_attendus/",
 )
 @parameter(
     code="start_date",
@@ -458,7 +460,9 @@ def validate_target_metadata(
         Si un dataElement, le categoryCombo, l'AOC ou le dataset est absent/incohérent.
     """
     # 1. dataElements existants + categoryCombo
-    all_de = pl.DataFrame(dhis2.meta.data_elements(fields="id,code,categoryCombo"))
+    all_de = pl.DataFrame(
+        dhis2.meta.data_elements(fields="id,code,categoryCombo"), infer_schema_length=10000
+    )
     de_combo = {
         row["id"]: (row["categoryCombo"] or {}).get("id")
         for row in all_de.to_dicts()

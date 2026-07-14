@@ -44,13 +44,13 @@ def _routine_row(**kw: object) -> dict:
 
 
 def test_aggregate_routine_sums_and_flags() -> None:
-    """La routine somme les métriques et pose produit_gere=1 ; nbrejrsdumois non sommé."""
+    """La routine somme les métriques (dont nbrejrsdumois) et pose produit_gere=1."""
     df = pl.DataFrame([_routine_row(), _routine_row(quantite_recue=5, orgUnit="OU1")])
     out = T.aggregate_routine(df, datetime(2025, 1, 1), datetime(2025, 1, 31, 23, 59))
     assert out.height == 1
     row = out.row(0, named=True)
     assert row["quantite_recue"] == 10  # 5 + 5
-    assert row["nbrejrsdumois"] == 31  # first, pas sommé
+    assert row["nbrejrsdumois"] == 62  # 31 + 31 (sommé sur les sites regroupés)
     assert row["produit_gere"] == 1
 
 
