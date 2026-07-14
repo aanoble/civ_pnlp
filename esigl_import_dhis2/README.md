@@ -91,8 +91,9 @@ Sous `metabase eSIGL/data/ressources/` :
   - `OrgUnit` : `New_Code` (code site) → `ID_Dhis2` (orgUnit).
   - `R ou G` : `code_produit`, `Type produit` (`ROUTINE`/`GTC`). Repli sur liste en dur si absente.
 - **`produits_traceurs/produits_traceurs.xlsx`** — fichier **dédié** des produits traceurs par
-  année (colonnes `annee`/`ANNEE` et `code_produit`/`Nvo code`), CSV ou XLSX. Sorti du classeur
-  de mapping pour être maintenu indépendamment.
+  année, CSV ou XLSX, en-tête en ligne 1 avec au moins `annee` et `code_produit` (les colonnes
+  `Code` / `Désignation` éventuelles sont ignorées). Sorti du classeur de mapping pour être
+  maintenu indépendamment.
 - **`site_attendus/sites_attendus.csv`** — fichier **consolidé** `annee,code_site,rapport_attendu`.
   À maintenir en concaténant les fichiers annuels PNLP (les formats Excel annuels diffèrent ;
   la normalisation est faite une fois pour toutes hors pipeline).

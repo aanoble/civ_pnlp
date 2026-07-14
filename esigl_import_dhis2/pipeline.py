@@ -356,7 +356,8 @@ def read_mappings(fp_ou_mapping: File, fp_traceurs: File) -> dict[str, pl.DataFr
 def _read_traceurs(path: Path) -> pl.DataFrame:
     """Lit la liste des produits traceurs par année (fichier dédié, CSV ou XLSX).
 
-    Colonnes acceptées : ``annee`` (ou ``ANNEE``) et ``code_produit`` (ou ``Nvo code``).
+    En-tête attendu en ligne 1, avec au moins les colonnes ``annee`` et ``code_produit``
+    (les éventuelles colonnes ``Code`` / ``Désignation`` sont ignorées).
 
     Parameters
     ----------
@@ -369,8 +370,6 @@ def _read_traceurs(path: Path) -> pl.DataFrame:
         Colonnes ``annee`` (int) et ``code_produit`` (str).
     """
     df = pl.read_csv(path) if path.suffix.lower() == ".csv" else pl.read_excel(path)
-    rename = {"Nvo code": "code_produit", "ANNEE": "annee"}
-    df = df.rename({k: v for k, v in rename.items() if k in df.columns})
     return df.select(
         pl.col("annee").cast(pl.Int64),
         pl.col("code_produit").cast(pl.String),
