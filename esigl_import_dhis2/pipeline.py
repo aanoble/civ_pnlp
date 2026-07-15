@@ -653,9 +653,7 @@ def extract_stock(
         f"Extraction stock du {cmm_start:%Y-%m-%d} au {end_dt:%Y-%m-%d} "
         f"(3 mois amont inclus pour la CMM des GTC)."
     )
-    processing_periods = (
-        f"pp.enddate BETWEEN '{cmm_start:%Y-%m-%d}'::date AND '{end_dt:%Y-%m-%d}'::date"
-    )
+    processing_periods = f"pp.enddate::date BETWEEN '{cmm_start:%Y-%m-%d}' AND '{end_dt:%Y-%m-%d}'"
     products_clause = _build_products_clause(mappings, product_code)
     facilities_clause = _build_facilities_clause(mb, facilities_code)
 
@@ -886,9 +884,7 @@ def extract_promptitude(
 
     mb = Metabase(metabase)
     _cmm_start, pub_start, end_dt = compute_extraction_window(start_date, end_date, months_back)
-    processing_periods = (
-        f"pp.enddate BETWEEN '{pub_start:%Y-%m-%d}'::date AND '{end_dt:%Y-%m-%d}'::date"
-    )
+    processing_periods = f"pp.enddate::date BETWEEN '{pub_start:%Y-%m-%d}' AND '{end_dt:%Y-%m-%d}'"
     facilities_clause = _build_facilities_clause(mb, facilities_code)
     query = QUERY_PROMPTITUDE.format(
         processing_periods=processing_periods,
