@@ -884,6 +884,11 @@ def extract_promptitude(
 
     mb = Metabase(metabase)
     _cmm_start, pub_start, end_dt = compute_extraction_window(start_date, end_date, months_back)
+    end_dt = (end_dt + relativedelta(months=1)).replace(day=1) + relativedelta(day=31)
+    current_run.log_info(
+        f"Extraction promptitude du {pub_start:%Y-%m-%d} au {end_dt:%Y-%m-%d} "
+        "(fenêtre étendue d'un mois)."
+    )
     processing_periods = f"pp.enddate::date BETWEEN '{pub_start:%Y-%m-%d}' AND '{end_dt:%Y-%m-%d}'"
     facilities_clause = _build_facilities_clause(mb, facilities_code)
     query = QUERY_PROMPTITUDE.format(
