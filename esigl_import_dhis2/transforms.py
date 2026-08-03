@@ -436,7 +436,7 @@ def add_promptitude_flag(
 
 
 def build_site_attendus_periods(
-    df_attendus: pl.DataFrame, max_year: int, max_month: int
+    df_attendus: pl.DataFrame, max_year: int, max_month: int, min_period: str | None = None
 ) -> pl.DataFrame:
     """Étend la liste annuelle des sites attendus en grille mensuelle.
 
@@ -446,6 +446,9 @@ def build_site_attendus_periods(
         Colonnes ``annee``, ``code_site``, ``rapport_attendu``.
     max_year, max_month : int
         Dernière année / dernier mois de la grille.
+    min_period : str | None, optional
+        Première période publiée (``YYYYMM``). Les périodes antérieures sont écartées.
+        Si ``None``, la grille démarre au 1er janvier de la première année du fichier.
 
     Returns
     -------
@@ -454,6 +457,8 @@ def build_site_attendus_periods(
     """
     min_year = int(df_attendus["annee"].min())  # type: ignore[arg-type]
     grid = monthly_periods(min_year, max_year, max_month)
+    if min_period is not None:
+        grid = grid.filter(pl.col("period") >= min_period)
     return grid.join(df_attendus, on="annee", how="left").select(
         "period", "code_site", "rapport_attendu"
     )
