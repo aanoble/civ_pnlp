@@ -909,7 +909,9 @@ def extract_promptitude(
         df_prompt, PROMPTITUDE_DEADLINE_DAYS, PROMPTITUDE_DEFAULT_DEADLINE_DAY
     )
 
-    attendus_periods = T.build_site_attendus_periods(df_attendus, end_dt.year, end_dt.month)
+    attendus_periods = T.build_site_attendus_periods(
+        df_attendus, end_dt.year, end_dt.month, min_period=f"{pub_start:%Y%m}"
+    )
     exclude = [datetime.now().strftime("%Y%m")]
     result = T.aggregate_promptitude(attendus_periods, df_prompt, mappings["ou"], exclude)
     current_run.log_info(f"Promptitude calculée : {result.height} lignes (period, orgUnit).")

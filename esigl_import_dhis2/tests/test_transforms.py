@@ -180,6 +180,21 @@ def test_promptitude_flag() -> None:
     assert out["rapport_prompt"].to_list() == [1, 0, 0]
 
 
+def test_build_site_attendus_periods_bounded_by_min_period() -> None:
+    """La grille démarre à min_period : les mois hors fenêtre publiée sont écartés.
+
+    Sans ce bornage, les périodes non extraites ressortent avec ``rapport_prompt = 0`` et
+    écrasent les valeurs déjà publiées dans DHIS2.
+    """
+    df_attendus = pl.DataFrame({"annee": [2026], "code_site": ["S1"], "rapport_attendu": [1]})
+
+    full = T.build_site_attendus_periods(df_attendus, 2026, 8)
+    assert full["period"].to_list() == [f"2026{m:02d}" for m in range(1, 9)]
+
+    bounded = T.build_site_attendus_periods(df_attendus, 2026, 8, min_period="202607")
+    assert bounded["period"].to_list() == ["202607", "202608"]
+
+
 def test_aggregate_promptitude() -> None:
     """Croisement sites attendus vs soumissions, agrégé par (period, orgUnit)."""
     attendus = pl.DataFrame(

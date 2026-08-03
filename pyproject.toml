@@ -70,6 +70,8 @@ ignore = [
     "DOC502", # Raised exception is not explicitly raised: {id}
     "RUF022", # `__all__` is not sorted
     "RUF005", # Consider expression instead of concatenation
+    "RUF105", # `noqa` comment used instead of `ruff: ignore` (on garde `# noqa:`, ruff >= 0.16)
+    "RUF201", # Rule code used instead of name in selectors (on garde les codes, ruff >= 0.16)
     "PLR0904", # Too many public methods ({methods} > {max_methods})
     "PLR0911", # Too many return statements ({returns} > {max_returns})
     "PLR0912", # Too many branches ({branches} > {max_branches})
